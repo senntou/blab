@@ -1,0 +1,22 @@
+[project]
+name = "blab"
+version = "0.1.0"
+description = "実験の構成要素を一級市民にする、ファイルシステムだけで動く実験管理ツール"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+ui = ["fastapi>=0.110", "uvicorn>=0.29"]
+parquet = ["pyarrow>=15"]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+blab = "blab.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["blab"]
