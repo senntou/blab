@@ -8,8 +8,14 @@
 | | |
 | --- | --- |
 | 小さいファイル（既定 1 MB 未満） | **run にコピーする。** fold split や label CSV は一番失われやすく、一番復元したい |
-| 大きいファイル / ディレクトリ | パス・サイズ・更新時刻・ハッシュだけ |
+| 大きいファイル | パス・サイズ・更新時刻・全バイトハッシュ |
+| 巨大な単一ファイル（既定 64 MB 以上） | 全バイトは読まない。**先頭 chunk + サイズ**からハッシュを作る（`partial`） |
 | 巨大なディレクトリ | 毎回全バイトを読まない。ファイル一覧から manifest ハッシュを作り、`.blab/index/` にキャッシュする |
+
+巨大な単一ファイル（lmdb など）は、比較ビューで「同じデータを指しているか」を見比べられれば
+十分で、常に全バイトを読む必要はない。先頭 chunk とサイズが一致すれば実務上は別物とは
+考えにくく、末尾までの一致を毎回確認するコストのほうが高い。厳密な全バイト一致を確認したい
+場合は、そのファイルを直接 `sha256sum` すればよい（blab はそこまでは保証しない）。
 """
 
 from __future__ import annotations
@@ -25,10 +31,17 @@ from .project import SCHEMA_VERSION
 #: これより小さいファイルは run にコピーする。
 COPY_UNDER_BYTES = 1024 * 1024
 
+#: これ以上の単一ファイルは全バイトを読まず、先頭 chunk + サイズだけでハッシュする。
+HASH_FULL_UNDER_BYTES = 64 * 1024 * 1024
+
+#: 巨大ファイルのハッシュに使う先頭 chunk のサイズ。
+PARTIAL_HASH_CHUNK_BYTES = 1024 * 1024
+
 DATA_NAME = "data.json"
 DATA_DIR = "data"
 
 HASH_KIND_BYTES = "bytes"
+HASH_KIND_PARTIAL = "partial"
 HASH_KIND_MANIFEST = "manifest"
 
 
@@ -37,6 +50,15 @@ def _hash_file(path: Path) -> str:
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
+    return "sha256:" + h.hexdigest()
+
+
+def _partial_hash_file(path: Path, size: int) -> str:
+    """先頭 chunk + サイズだけからハッシュを作る（巨大な単一ファイル用）。"""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        h.update(f.read(PARTIAL_HASH_CHUNK_BYTES))
+    h.update(f"\0{size}".encode("utf-8"))
     return "sha256:" + h.hexdigest()
 
 
@@ -94,13 +116,18 @@ def _entry(name: str, path: Path, run_path: Path, cache_dir: Path | None) -> dic
             "copied_to": None,
         }
 
+    if stat.st_size >= HASH_FULL_UNDER_BYTES:
+        hash, hash_kind = _partial_hash_file(path, stat.st_size), HASH_KIND_PARTIAL
+    else:
+        hash, hash_kind = _hash_file(path), HASH_KIND_BYTES
+
     entry = {
         "path": str(path),
         "kind": "file",
         "size": stat.st_size,
         "mtime": stat.st_mtime,
-        "hash": _hash_file(path),
-        "hash_kind": HASH_KIND_BYTES,
+        "hash": hash,
+        "hash_kind": hash_kind,
         "copied_to": None,
     }
     if stat.st_size < COPY_UNDER_BYTES:

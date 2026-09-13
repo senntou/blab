@@ -594,6 +594,10 @@ group を宣言で決める以上、付け忘れと打ち間違いは必ず起�
 
 - ディレクトリを**読むだけ**。例外は `blab mv`（run の group 付け替え）だけで、これも
   UI が直接ディレクトリを触るのではなく実行層の同じ操作を呼ぶ
+- **`_trash` は予約 group 名。** UI の「削除」は新しい書き込み経路を増やさず、この
+  group へ `blab mv` することで表す。一覧 API は既定でこの配下を返さない
+  （`include_trash=1` で含める）ので、通常の run 一覧・experiment の集計からは消える。
+  実体は消えないので、`_trash` group から `blab mv` で戻せば復元できる
 - `meta` / `summary` / `resolved.yaml` は mtime が変わったものだけ読み直す
 - `metrics.jsonl` は読み終えたバイトオフセットを保持し、追記分だけ読む
 - component の逆引き（この component を使った run 一覧）は、読み込み済みの `resolved.yaml` から

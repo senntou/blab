@@ -94,7 +94,7 @@
   box-sizing: border-box;
 }
 
-/* .banner や .selection-bar など `display: flex` を持つ要素は、その author
+/* .banner など `display: flex` を持つ要素は、その author
    CSS が UA スタイルシートの `[hidden] { display: none }` に（詳細度が同じでも
    author 優先で）勝ってしまい、`hidden` 属性を付けても常に表示され続ける。
    ここで明示的に上書きして、`hidden` を最終的な決定権にする。 */
@@ -255,37 +255,12 @@ main[aria-busy='true'] {
   color: #fff;
 }
 
-/* main のスクロール領域とは独立に、下端へ浮かせて重ねる。
-   in-flow に置くと出現/消滅のたびに main の高さが変わって縦にガタつくため。 */
-.selection-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 18px;
-  background: var(--accent-soft);
-  border-top: 1px solid var(--accent-line);
-  box-shadow: var(--shadow-2);
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 40;
-}
 .sel-count {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: var(--accent);
   white-space: nowrap;
-}
-.sel-names {
-  color: var(--muted);
-  font-size: 12px;
-  font-family: var(--mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 46vw;
 }
 
 /* -------------------------------------------------------------- 見出し周り */
@@ -471,6 +446,21 @@ main[aria-busy='true'] {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
   color: #fff;
+}
+.btn.danger {
+  color: var(--failed);
+  border-color: var(--failed);
+}
+.btn.danger:hover {
+  background: var(--failed);
+  border-color: var(--failed);
+  color: #fff;
+}
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 .btn-count {
   background: var(--accent);
@@ -2397,19 +2387,20 @@ code.block {
 .crumbs a:hover { color: var(--accent); }
 .crumbs .sep { opacity: 0.5; }
 
+.head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .page-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-}
-.pick-inline {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text-2);
 }
 .project-name { font-weight: 600; color: var(--text-2); }
 
@@ -2484,6 +2475,7 @@ code.block {
   margin-bottom: 8px;
   overflow: hidden;
   position: relative;
+  min-width: 0;
 }
 .tree-head {
   display: flex;
@@ -2493,6 +2485,7 @@ code.block {
   padding: 8px 10px 8px 13px;
   background: var(--panel-2);
   cursor: pointer;
+  min-width: 0;
 }
 .tree-head:hover { background: var(--accent-soft); }
 .tree-node.is-selected {
@@ -2505,13 +2498,18 @@ code.block {
   font-size: 12px;
   color: var(--muted);
   min-width: 72px;
+  overflow-wrap: anywhere;
 }
 .tree-component {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   color: var(--text);
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
+.tree-component strong { overflow-wrap: anywhere; }
 .tree-version {
   font-family: var(--mono);
   font-size: 12px;
@@ -2523,14 +2521,6 @@ code.block {
   color: var(--muted);
   padding: 1px 6px;
   border: 1px solid var(--border);
-  border-radius: 999px;
-}
-.tree-multi {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: #1e4fb5;
-  background: var(--accent-soft);
-  padding: 1px 6px;
   border-radius: 999px;
 }
 .tree-hash { margin-left: auto; font-size: 11px; color: var(--muted); }
@@ -2549,6 +2539,42 @@ code.block {
 
 .tree-body { padding: 10px 13px 2px; border-top: 1px solid var(--border); }
 .tree-noargs { margin: 0; font-size: 12px; }
+
+/* 同じ component が複数回 build された場合、`×N` に畳まず 1 行 1 build で並べる
+   （design.md §11: 記録できなかったことを黙って隠さないのと同じで、存在するものは畳んで隠さない）。 */
+.tree-builds {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.tree-build {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  cursor: pointer;
+  font-size: 12px;
+  min-width: 0;
+}
+.tree-build:hover { background: var(--accent-soft); }
+.tree-build.is-selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.tree-build-index {
+  font-family: var(--mono);
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+.tree-build-label {
+  font-family: var(--mono);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
 /* 縦の連結線 + 各子ノードへの小さな枝（org chart 風）。 */
 .tree-children {
   margin-top: 2px;
@@ -2582,7 +2608,7 @@ code.block {
 
 .config-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
+  grid-template-columns: minmax(220px, 1fr) minmax(320px, 1fr);
   gap: 18px;
   align-items: start;
 }
@@ -2763,6 +2789,46 @@ tr.arg-override th { color: #8a5a12; }
 .search input { border: none; background: none; outline: none; flex: 1; min-width: 0; font: inherit; color: var(--text); }
 .table-body { overflow-x: auto; }
 
+.table-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.move-picker { position: relative; }
+.move-picker > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+}
+.move-picker > summary::-webkit-details-marker { display: none; }
+.move-picker-body {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  margin-top: 6px;
+  padding: 10px;
+  display: flex;
+  gap: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+}
+.move-picker-body input {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+  min-width: 220px;
+}
+
 table.nodes { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; }
 table.nodes th,
 table.nodes td { padding: 7px 12px; text-align: left; border-bottom: 1px solid var(--border); }
@@ -2822,11 +2888,11 @@ tr.child-row td:first-child {
   margin: -7px 0;
   border: none;
   border-radius: var(--radius-sm);
-  background: var(--panel);
+  background-color: transparent;
   color: var(--text-2);
   cursor: pointer;
 }
-.twisty:hover { color: var(--accent); background: var(--accent-soft); }
+.twisty:hover { color: var(--accent); }
 .twisty-icon { transition: transform 0.12s ease; }
 .twisty-icon.open { transform: rotate(90deg); }
 
@@ -2920,6 +2986,50 @@ tr.child-row td:first-child {
   font-family: var(--mono);
   color: var(--text-2);
 }
+
+/* --- 外部ファイル（design.md §8） ---------------------------------------- */
+/* 記録するのは同一性であって実体ではない、が **中身が run にあるならそれは見えるべき**
+   （黙って隠さない、という §0 の原則を UI 側でも守る）。 */
+
+.data-panel { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+.data-panel h3 { margin: 0; font-size: 14px; }
+.data-entry {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 13px;
+  min-width: 0;
+}
+.data-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.data-entry-path {
+  margin-top: 2px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.data-entry-copy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.data-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  text-decoration: none;
+  margin-left: auto;
+}
+.data-open:hover { text-decoration: underline; }
+.data-preview { margin-top: 8px; }
 
 /* --- 環境 / パッケージ --------------------------------------------------- */
 

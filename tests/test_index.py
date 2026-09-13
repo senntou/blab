@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from blab.aggregate import aggregate
-from blab.index import find, runs_using, scan, walk
+from blab.index import find, is_trashed, runs_using, scan, walk
 from blab.run import STATUS_FINISHED
 from blab.runner import execute
 from blab.spec import parse_document
@@ -106,6 +106,24 @@ class TestFind:
 
     def test_missing(self, project):
         assert find(project.runs_dir(), "nope") is None
+
+
+class TestIsTrashed:
+    def test_run_directly_under_trash(self, project):
+        root = project.runs_dir()
+        assert is_trashed(root, root / "cifar100" / "_trash" / "20260101-000000_abcd")
+
+    def test_the_trash_group_itself(self, project):
+        root = project.runs_dir()
+        assert is_trashed(root, root / "cifar100" / "_trash")
+
+    def test_ordinary_run_is_not_trashed(self, project):
+        root = project.runs_dir()
+        assert not is_trashed(root, root / "cifar100" / "20260101-000000_abcd")
+
+    def test_ordinary_group_is_not_trashed(self, project):
+        root = project.runs_dir()
+        assert not is_trashed(root, root / "cifar100" / "cv5" / "20260101-000000_abcd")
 
 
 def test_reverse_lookup_by_component_hash(project):

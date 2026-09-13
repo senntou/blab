@@ -143,14 +143,6 @@ function nodeHeader(name, node, path, { onSelect } = {}) {
     ]),
   );
   if (node.entry) head.append(el('span', { class: 'tree-entry', text: node.entry }));
-  const builds = node.builds || [];
-  if (builds.length > 1) {
-    head.append(
-      el('span', { class: 'tree-multi', title: `${builds.length} 回 build された` }, [
-        el('span', { text: `×${builds.length}` }),
-      ]),
-    );
-  }
   head.append(
     el('a', {
       class: 'tree-open',
@@ -160,6 +152,44 @@ function nodeHeader(name, node, path, { onSelect } = {}) {
     }, [icon('code', { size: 13 })]),
   );
   return head;
+}
+
+/** build ごとの短い見分けラベル。build 間で値が違う引数だけを拾って `k=v` にする。 */
+function buildLabel(build, index, builds) {
+  const args = (build && build.args) || {};
+  const varying = Object.keys(args).filter((key) => {
+    const values = new Set(builds.map((b) => JSON.stringify((b.args || {})[key])));
+    return values.size > 1;
+  });
+  if (!varying.length) return `build #${index}`;
+  return varying.map((key) => `${key}=${JSON.stringify(args[key])}`).join(', ');
+}
+
+/**
+ * 同じ component が複数回 build された場合、**1 箱に畳んで `×N` と出さず、
+ * build ごとに 1 行として並べる。** 「dataset が train / val の 2 つある」ことが
+ * 一目で分かるようにするため（折りたたむと存在自体が見えなくなる）。
+ */
+function renderBuilds(node, path, options) {
+  const builds = node.builds || [];
+  const list = el('div', { class: 'tree-builds' });
+  builds.forEach((build, i) => {
+    const buildPath = `${path}#${i}`;
+    list.append(
+      el('div', {
+        class: 'tree-build',
+        dataset: { path: buildPath },
+        onclick: (e) => {
+          e.stopPropagation();
+          options.onSelect && options.onSelect(buildPath, node, i);
+        },
+      }, [
+        el('span', { class: 'tree-build-index', text: `#${i}` }),
+        el('span', { class: 'tree-build-label', text: buildLabel(build, i, builds) }),
+      ]),
+    );
+  });
+  return list;
 }
 
 function renderNode(name, node, path, options) {
@@ -177,6 +207,9 @@ function renderNode(name, node, path, options) {
         el('span', { text: '宣言されましたが、一度も build されませんでした' }),
       ]),
     );
+    hasBody = true;
+  } else if ((node.builds || []).length > 1) {
+    body.append(renderBuilds(node, path, options));
     hasBody = true;
   }
 

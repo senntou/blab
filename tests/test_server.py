@@ -182,6 +182,31 @@ class TestWrites:
         res = client.post(f"/api/nodes/{moved}/group", json={"group": None})
         assert "/cv5/" not in res.json()["path"]
 
+    def test_deleting_is_moving_to_the_reserved_trash_group(self, client):
+        """UI の「削除」も新しい書き込み経路を増やさず、_trash への group 付け替えでしかない。"""
+        path = next(r["path"] for r in client.get("/api/nodes").json()["rows"] if r["kind"] == "run")
+        res = client.post(f"/api/nodes/{path}/group", json={"group": "_trash"})
+        assert res.status_code == 200
+        trashed = res.json()["path"]
+        assert trashed.startswith("cifar100/_trash/")
+
+        # 既定の一覧からは消える。
+        rows = client.get("/api/nodes").json()["rows"]
+        assert not any(r["path"] == trashed or r["path"].startswith("cifar100/_trash") for r in rows)
+        assert not any(r["kind"] == "run" for r in rows)
+
+        # experiment の集計からも外れる。
+        exp = client.get("/api/experiments").json()["experiments"][0]
+        assert exp["n_runs"] == 0
+
+        # include_trash=1 なら見える。実体は消えていないので復元できる。
+        rows = client.get("/api/nodes", params={"include_trash": "1"}).json()["rows"]
+        assert any(r["path"] == trashed for r in rows)
+
+        restore = client.post(f"/api/nodes/{trashed}/group", json={"group": None})
+        assert restore.status_code == 200
+        assert "_trash" not in restore.json()["path"]
+
 
 def test_files_endpoint_refuses_escape(client):
     assert client.get("/files/../../etc/passwd").status_code in (400, 404)

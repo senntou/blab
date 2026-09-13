@@ -100,7 +100,7 @@ export async function groupView(ctx, path) {
       tabs(
         [
           { id: 'runs', label: 'run', icon: 'flask', count: runs.length,
-            render: () => nodeTable(runs, { ctx, prefKey: `group.${path}` }) },
+            render: () => nodeTable(runs, { ctx, prefKey: `group.${path}`, onChanged: load }) },
           { id: 'overlay', label: '重ね描き', icon: 'chart',
             render: () => {
               const runNodes = runs.filter((r) => r.kind === 'run');

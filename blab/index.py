@@ -27,6 +27,10 @@ from .run import (
 
 STATUS_STALE = "stale"
 
+#: 削除の予約 group 名（layout.md §9）。「削除」も内部的には `blab mv` と同じ操作で、
+#: この名前の group へ移すだけ。新しい書き込み経路を増やさないための約束。
+TRASH_GROUP = "_trash"
+
 
 @dataclass
 class Node:
@@ -216,6 +220,11 @@ def relpath(root: Path, path: Path) -> str:
         return str(Path(path).resolve().relative_to(Path(root).resolve()))
     except ValueError:
         return str(path)
+
+
+def is_trashed(root: Path, path: Path) -> bool:
+    """`_trash` 予約 group の配下か（そのノード自身が `_trash` の場合も含む）。"""
+    return TRASH_GROUP in Path(relpath(root, path)).parts
 
 
 def safe_join(root: Path, relative: str) -> Path:

@@ -91,7 +91,7 @@ def create_app(project: Project, runs_dir: Path | None = None) -> FastAPI:
     def api_experiments() -> dict:
         out = []
         for node in view.nodes():
-            runs = node.leaf_runs()
+            runs = [r for r in node.leaf_runs() if not index_mod.is_trashed(root, r.path)]
             out.append(
                 {
                     "path": index_mod.relpath(root, node.path),
@@ -109,12 +109,15 @@ def create_app(project: Project, runs_dir: Path | None = None) -> FastAPI:
     def api_nodes(
         experiment: str | None = None,
         kind: str | None = Query(default=None, pattern="^(run|group)$"),
+        include_trash: bool = False,
     ) -> dict:
         rows = []
         for node in view.all():
             if node.kind not in (KIND_RUN, KIND_GROUP):
                 continue
             if kind and node.kind != kind:
+                continue
+            if not include_trash and index_mod.is_trashed(root, node.path):
                 continue
             relative = index_mod.relpath(root, node.path)
             if experiment and not relative.startswith(experiment):
@@ -306,7 +309,11 @@ def create_app(project: Project, runs_dir: Path | None = None) -> FastAPI:
 
     @app.post("/api/nodes/{path:path}/group")
     def api_move(path: str, group: str | None = Body(default=None, embed=True)) -> dict:
-        """**UI が行う唯一の書き込み。** `blab mv` と同じ操作を呼ぶ（layout.md §9）。"""
+        """**UI が行う唯一の書き込み。** `blab mv` と同じ操作を呼ぶ（layout.md §9）。
+
+        UI の「削除」もこれを呼ぶだけ：予約 group `_trash`（`index.TRASH_GROUP`）へ
+        移すことを削除として扱う。新しい書き込み経路は増やさない。
+        """
         node = view.node(path)
         if node.kind != KIND_RUN:
             raise HTTPException(status_code=400, detail="run ではありません")

@@ -186,3 +186,18 @@ class TestData:
         # 記録には実パスではなく論理名が残る。
         recorded = doc["run"]["children"]["dataset"]["builds"][0]["args"]["root"]
         assert recorded == {"$data": "FOLDS"}
+
+    def test_huge_files_are_not_fully_hashed(self, project, tmp_path, monkeypatch):
+        """巨大な単一ファイルは全バイトを読まず、先頭 chunk + サイズだけでハッシュする。"""
+        import blab.data as data
+
+        monkeypatch.setattr(data, "HASH_FULL_UNDER_BYTES", 16)
+        monkeypatch.setattr(data, "PARTIAL_HASH_CHUNK_BYTES", 4)
+        big = tmp_path / "huge.bin"
+        big.write_bytes(b"a" * 100)
+        project.local["data"] = {"FOLDS": str(big)}
+        text = BASELINE.replace("augment: randaug", "root: {data: FOLDS}")
+        path = go(project, text).run.path
+
+        doc = json.loads((path / "data.json").read_text())
+        assert doc["FOLDS"]["hash_kind"] == "partial"

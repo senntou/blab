@@ -198,9 +198,9 @@ function summaryTable(details) {
   return table;
 }
 
-export async function compareView(ctx) {
+export async function compareView(ctx, query = new URLSearchParams()) {
   const node = el('div', { class: 'view' });
-  const paths = ctx.selection();
+  const paths = [...new Set((query.get('paths') || '').split(',').map((p) => p.trim()).filter(Boolean))];
 
   node.append(el('h1', { text: '比較' }));
 
@@ -209,7 +209,7 @@ export async function compareView(ctx) {
       el('div', { class: 'empty-state' }, [
         icon('compare', { size: 28, class: 'empty-icon' }),
         el('p', { text: '比較するには 2 つ以上を選んでください。' }),
-        el('p', { class: 'muted', text: 'run テーブルのチェックボックスで選べます（run と group を混ぜてもよい）。' }),
+        el('p', { class: 'muted', text: 'run 一覧のチェックボックスで選んで「比較」ボタンを押してください（run と group を混ぜてもよい）。' }),
       ]),
     );
     return { node, refresh: async () => {}, live: () => false };

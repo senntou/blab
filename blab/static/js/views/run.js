@@ -1,6 +1,6 @@
 // Run 詳細 — meta / 構成ツリー / metrics / アーティファクト / ログ / 環境 / 焼き込んだソース。
 
-import { api } from '../api.js';
+import { api, fileUrl } from '../api.js';
 import { artifactBrowser } from '../artifacts.js';
 import { lineChart, seriesPoints } from '../chart.js';
 import { argsTable, configTree, flattenTree, renderValue, shortHash, versionLabel, versionTitle } from '../config-tree.js';
@@ -73,9 +73,18 @@ function loadComponentInfo(id) {
   return componentInfoCache.get(id);
 }
 
-/** 選んだ 1 component の詳細（説明 + ハイパーパラメータ）。構成ツリーの右側に出す。 */
-function configDetailPanel(nodePath, node) {
+/**
+ * 選んだ 1 component の詳細（説明 + ハイパーパラメータ）。構成ツリーの右側に出す。
+ *
+ * @param {string} nodePath  木の位置（`run.dataset` など）
+ * @param {object} node
+ * @param {number|null} buildIndex  ツリーで特定の build 行を選んだ場合、その番号。
+ *   `null` なら「宣言そのもの」を選んだ扱い（README + 全 build を並べる）。
+ */
+function configDetailPanel(nodePath, node, buildIndex = null) {
   const host = el('div', { class: 'config-detail' });
+  const builds = node.builds || [];
+  const build = buildIndex !== null ? builds[buildIndex] : null;
 
   host.append(
     el('div', { class: 'detail-head' }, [
@@ -91,6 +100,7 @@ function configDetailPanel(nodePath, node) {
     ]),
     el('div', { class: 'detail-sub' }, [
       el('code', { class: 'muted', text: nodePath }),
+      build ? el('span', { class: 'tree-entry', text: `build #${buildIndex}` }) : null,
       node.entry ? el('span', { class: 'tree-entry', text: node.entry }) : null,
       el('code', { class: 'tree-hash', title: node.hash, text: shortHash(node.hash) }),
     ]),
@@ -113,22 +123,28 @@ function configDetailPanel(nodePath, node) {
   });
 
   const args = el('div', { class: 'detail-args' });
-  if (node.args) {
+  if (build) {
+    // ツリーで特定の build 行を選んだ場合は、それだけを見せる（他の build と混ぜない）。
+    args.append(argsTable(build.args, build.args_from));
+  } else if (node.args) {
     args.append(argsTable(node.args, node.args_from));
+  } else if (!builds.length) {
+    args.append(
+      el('p', { class: 'tree-unused' }, [
+        icon('alert', { size: 14 }),
+        el('span', { text: '宣言されましたが、一度も build されませんでした' }),
+      ]),
+    );
+  } else if (builds.length === 1) {
+    args.append(argsTable(builds[0].args, builds[0].args_from));
   } else {
-    const builds = node.builds || [];
-    if (!builds.length) {
-      args.append(
-        el('p', { class: 'tree-unused' }, [
-          icon('alert', { size: 14 }),
-          el('span', { text: '宣言されましたが、一度も build されませんでした' }),
-        ]),
-      );
-    } else {
-      builds.forEach((build, i) => {
-        args.append(argsTable(build.args, build.args_from, { title: builds.length > 1 ? `build #${i}` : null }));
-      });
-    }
+    // 宣言そのものを選んだ場合の概観。個々の build はツリーの行から選べる。
+    args.append(
+      el('p', { class: 'muted' }, [
+        icon('info', { size: 13 }),
+        el('span', { text: `${builds.length} 回 build されました。左のツリーから 1 つずつ選べます。` }),
+      ]),
+    );
   }
   host.append(args);
 
@@ -148,9 +164,14 @@ function configPanel(resolved) {
       box.classList.toggle('is-selected', box.dataset.path === selected);
     }
     clear(detailHost);
-    const node = selected && flat[selected];
+    // build 行（`run.dataset#1` のように選ばれる）は、木の位置 + build 番号に分ける。
+    const [basePath, buildIndexText] = selected ? selected.split('#') : [null];
+    const node = basePath && flat[basePath];
+    const buildIndex = buildIndexText === undefined ? null : Number(buildIndexText);
     detailHost.append(
-      node ? configDetailPanel(selected, node) : el('p', { class: 'muted pad', text: 'component を選ぶと詳細が出ます' }),
+      node
+        ? configDetailPanel(basePath, node, buildIndex)
+        : el('p', { class: 'muted pad', text: 'component を選ぶと詳細が出ます' }),
     );
   }
 
@@ -257,29 +278,80 @@ function envPanel(env) {
   return wrap;
 }
 
-function dataPanel(data) {
-  if (!data) return null;
-  const names = Object.keys(data).filter((k) => k !== 'schema_version');
-  if (!names.length) return null;
-  const table = el('table', { class: 'args' });
-  table.append(el('caption', { text: '外部ファイル' }));
-  const body = el('tbody');
-  for (const name of names) {
-    const entry = data[name] || {};
-    body.append(
-      el('tr', {}, [
-        el('th', { text: name }),
-        el('td', {}, [
-          el('code', { text: entry.path || '-' }),
-          entry.hash ? el('span', { class: 'muted', text: ` ${shortHash(entry.hash)}` }) : null,
-          entry.copied_to ? el('span', { class: 'chip chip-data', text: `run にコピー済み` }) : null,
-          entry.$unavailable ? renderValue({ $unavailable: entry.$unavailable }) : null,
+const HASH_KIND_LABEL = {
+  partial: '先頭のみ（巨大ファイルなので全バイトは読まない）',
+  manifest: 'ファイル一覧のみ（中身は読まない）',
+};
+
+/** 小さいファイル（run にコピー済み）の中身をその場に出す。design.md §8 の実演。 */
+function dataFilePreview(url) {
+  const host = el('div', { class: 'data-preview' });
+  fetch(url)
+    .then((res) => {
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      return res.text();
+    })
+    .then((text) => host.append(codeBlock(text, { language: 'text' })))
+    .catch((e) => host.append(el('p', { class: 'muted', text: `プレビューを読み込めませんでした: ${e.message}` })));
+  return host;
+}
+
+function dataEntry(name, entry, runPath) {
+  const box = el('div', { class: 'data-entry' });
+  box.append(
+    el('div', { class: 'data-entry-head' }, [
+      icon('folder', { size: 14 }),
+      el('strong', { text: name }),
+      entry.hash ? el('code', { class: 'muted', title: entry.hash, text: shortHash(entry.hash) }) : null,
+      HASH_KIND_LABEL[entry.hash_kind]
+        ? el('span', { class: 'chip', title: HASH_KIND_LABEL[entry.hash_kind], text: entry.hash_kind })
+        : null,
+    ]),
+    // 実パスは「今このマシンでどこを指しているか」。YAML には論理名しか書かないので、
+    // これが分からないと「そもそもどのファイルの話か」を追えない。
+    el('div', { class: 'data-entry-path muted', title: '実パス（このマシンでの場所）' }, [
+      el('code', { text: entry.path || '-' }),
+    ]),
+  );
+
+  if (entry.$unavailable) {
+    box.append(renderValue({ $unavailable: entry.$unavailable }));
+  } else if (entry.copied_to) {
+    const url = fileUrl(runPath, entry.copied_to);
+    box.append(
+      el('div', { class: 'data-entry-copy' }, [
+        icon('check', { size: 13 }),
+        el('span', { text: '小さいファイルなので run にコピー済み: ' }),
+        el('code', { text: `<run>/${entry.copied_to}` }),
+        el('a', { class: 'data-open', href: url, target: '_blank', title: '生ファイルを新しいタブで開く' }, [
+          icon('download', { size: 13 }),
+          el('span', { text: '生ファイルを開く' }),
         ]),
+      ]),
+      dataFilePreview(url),
+    );
+  } else {
+    box.append(
+      el('p', { class: 'muted' }, [
+        icon('info', { size: 13 }),
+        el('span', { text: '大きいファイル / ディレクトリなので run にはコピーせず、同一性（ハッシュ）だけを記録' }),
       ]),
     );
   }
-  table.append(body);
-  return table;
+  return box;
+}
+
+function dataPanel(data, runPath) {
+  const names = Object.keys(data || {}).filter((k) => k !== 'schema_version');
+  if (!names.length) {
+    return el('p', { class: 'muted pad', text: '外部ファイル（{data: ...}）は使われていません' });
+  }
+  const host = el('div', { class: 'data-panel' });
+  host.append(el('h3', { text: '外部ファイル' }));
+  for (const name of names) {
+    host.append(dataEntry(name, data[name] || {}, runPath));
+  }
+  return host;
 }
 
 async function sourcePanel(path, components) {
@@ -384,19 +456,6 @@ export async function runView(ctx, path) {
       ]),
       el('div', { class: 'page-head' }, [
         el('h1', { text: detail.name || path.split('/').pop() }),
-        el('label', { class: 'pick-inline' }, [
-          el('input', {
-            type: 'checkbox',
-            checked: ctx.selection().includes(path),
-            onchange: (e) => {
-              const next = new Set(ctx.selection());
-              if (e.target.checked) next.add(path);
-              else next.delete(path);
-              ctx.setSelection([...next]);
-            },
-          }),
-          el('span', { text: '比較に追加' }),
-        ]),
       ]),
       metaGrid(detail),
       pathField('run', path, 'folder'),
@@ -409,6 +468,7 @@ export async function runView(ctx, path) {
     if (summary) node.append(summary);
 
     const metricsKeys = Object.keys((detail.resolved && {}) || {});
+    const dataNames = Object.keys(detail.data || {}).filter((k) => k !== 'schema_version');
     node.append(
       tabs(
         [
@@ -465,6 +525,13 @@ export async function runView(ctx, path) {
             },
           },
           {
+            id: 'data',
+            label: '外部ファイル',
+            icon: 'folder',
+            count: dataNames.length || null,
+            render: () => dataPanel(detail.data, path),
+          },
+          {
             id: 'logs',
             label: 'ログ',
             icon: 'terminal',
@@ -482,13 +549,7 @@ export async function runView(ctx, path) {
             id: 'env',
             label: '環境',
             icon: 'server',
-            render: () => {
-              const host = el('div');
-              const data = dataPanel(detail.data);
-              if (data) host.append(data);
-              host.append(envPanel(detail.env));
-              return host;
-            },
+            render: () => envPanel(detail.env),
           },
         ],
         { prefKey: 'run.tab' },

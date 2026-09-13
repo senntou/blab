@@ -71,8 +71,12 @@ function tokens(node) {
   // --set の記録。
   assert.ok(text.includes('run.lr=0.0003'), 'overrides を出す');
 
-  // 同じ Builder から 2 回 build した dataset は、箱の上で分かる。
-  assert.ok(text.includes('×2'), '複数 build されたことを箱の上で示す');
+  // 同じ Builder から 2 回 build した dataset は、`×2` に畳まず 1 行 1 build で
+  // 別々に見える（存在するものを畳んで隠さない）。
+  assert.ok(!text.includes('×2'), '`×N` には畳まない');
+  assert.ok(text.includes('.tree-build') && text.includes('.tree-builds'), 'build ごとの行がある');
+  assert.ok(text.includes('split="train"'), '各 build の見分けラベルが出る');
+  assert.ok(text.includes('split="val"'), 'train と val の両方が別行で出る');
 
   console.log('config-tree: ok');
 }

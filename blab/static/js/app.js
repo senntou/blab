@@ -2,7 +2,7 @@
 
 import { api } from './api.js';
 import { icon } from './icons.js';
-import { getPref, loadPrefs, setPref } from './prefs.js';
+import { loadPrefs } from './prefs.js';
 import { el, clear, copyButton } from './util.js';
 import { experimentsView } from './views/experiments.js';
 import { runsView } from './views/runs.js';
@@ -13,41 +13,18 @@ import { componentsView } from './views/components.js';
 import { componentView } from './views/component.js';
 
 const POLL_MS = 3000;
-const SELECTION_KEY = 'selection';
 
 const app = document.getElementById('app');
-const selectionBar = document.getElementById('selection-bar');
 const banner = document.getElementById('banner');
 
 let current = null;
 let timer = null;
-let selection = [];
 
+// 選択（比較・削除・移動の対象）は run 一覧の中だけで完結させる（table.js が持つ）。
+// ページをまたいで持ち回らない。比較へは選んだ時点で URL クエリに載せて渡す。
 const ctx = {
-  selection: () => selection,
-  setSelection(paths) {
-    selection = [...new Set(paths)];
-    setPref(SELECTION_KEY, selection);
-    renderSelectionBar();
-  },
   notify: showError,
 };
-
-function renderSelectionBar() {
-  clear(selectionBar);
-  if (!selection.length) {
-    selectionBar.hidden = true;
-    return;
-  }
-  selectionBar.hidden = false;
-  selectionBar.append(
-    el('span', { class: 'sel-count' }, [icon('check', { size: 15 }), el('strong', { text: String(selection.length) }), ' run を選択中']),
-    el('span', { class: 'sel-names', text: selection.map((p) => p.split('/').pop()).join(', ') }),
-    el('span', { class: 'spacer' }),
-    el('a', { class: 'btn primary', href: '#/compare' }, [icon('compare'), el('span', { text: '比較する' })]),
-    el('button', { class: 'btn', onclick: () => ctx.setSelection([]) }, [icon('x'), el('span', { text: 'クリア' })]),
-  );
-}
 
 function showError(message) {
   clear(banner);
@@ -59,17 +36,19 @@ function showError(message) {
 }
 
 function parseRoute() {
-  const hash = location.hash.replace(/^#\/?/, '');
-  if (!hash) return { name: 'experiments' };
-  const [head, ...rest] = hash.split('/');
+  const raw = location.hash.replace(/^#\/?/, '');
+  if (!raw) return { name: 'experiments', query: new URLSearchParams() };
+  const [hashPath, queryString] = raw.split('?');
+  const query = new URLSearchParams(queryString || '');
+  const [head, ...rest] = hashPath.split('/');
   const path = rest.join('/');
-  if (head === 'e') return { name: 'runs', path };
-  if (head === 'run') return { name: 'run', path };
-  if (head === 'group') return { name: 'group', path };
-  if (head === 'compare') return { name: 'compare' };
-  if (head === 'components') return { name: 'components' };
-  if (head === 'component') return { name: 'component', path };
-  return { name: 'experiments' };
+  if (head === 'e') return { name: 'runs', path, query };
+  if (head === 'run') return { name: 'run', path, query };
+  if (head === 'group') return { name: 'group', path, query };
+  if (head === 'compare') return { name: 'compare', query };
+  if (head === 'components') return { name: 'components', query };
+  if (head === 'component') return { name: 'component', path, query };
+  return { name: 'experiments', query };
 }
 
 function syncNav(route) {
@@ -90,7 +69,7 @@ async function route() {
     if (r.name === 'runs') current = await runsView(ctx, r.path);
     else if (r.name === 'run') current = await runView(ctx, r.path);
     else if (r.name === 'group') current = await groupView(ctx, r.path);
-    else if (r.name === 'compare') current = await compareView(ctx);
+    else if (r.name === 'compare') current = await compareView(ctx, r.query);
     else if (r.name === 'components') current = await componentsView(ctx);
     else if (r.name === 'component') current = await componentView(ctx, decodeURIComponent(r.path));
     else current = await experimentsView(ctx);
@@ -144,9 +123,6 @@ async function showRoot() {
 
 async function boot() {
   loadPrefs();
-  const stored = getPref(SELECTION_KEY, []);
-  selection = Array.isArray(stored) ? stored : [];
-  renderSelectionBar();
   showRoot();
   await route();
 }

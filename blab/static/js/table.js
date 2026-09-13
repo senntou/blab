@@ -3,6 +3,7 @@
 // 「どの版の resnet18 を使った run か」でソート・フィルタできることが狙い（design.md §11）。
 // group は折りたたみ行にし、集計（読むときに導出したもの）をその行に出す。
 
+import { api } from './api.js';
 import { icon, statusDot } from './icons.js';
 import { getPref, setPref } from './prefs.js';
 import { el, clear, fmtDuration, fmtNumber, fmtRelative, isNumber } from './util.js';
@@ -99,9 +100,10 @@ function compare(a, b) {
 
 /**
  * @param {Array} rows   /api/nodes の rows
- * @param {object} opts  {ctx, prefKey}
+ * @param {object} opts  {ctx, prefKey, onChanged}
+ *   onChanged: 削除・移動が成功した後に呼ぶ再読み込み用コールバック（呼び出し元が rows を取り直す）。
  */
-export function nodeTable(rows, { ctx = null, prefKey = 'table' } = {}) {
+export function nodeTable(rows, { ctx = null, prefKey = 'table', onChanged = null } = {}) {
   const wrap = el('div', { class: 'table-wrap' });
   const columns = discoverColumns(rows);
   const known = new Set(columns.map((c) => c.key));
@@ -116,10 +118,119 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table' } = {}) {
   let filter = '';
   // group は既定で畳んでおく。開いたものだけ憶えるので、初めて開く group は必ず畳まれた状態から始まる。
   const expanded = new Set(getPref(`${prefKey}.expanded`, []));
+  // 選択は比較・削除・移動の対象。ページをまたいで持ち回らない、この表だけのローカルな状態。
+  const selected = new Set();
 
   const controls = el('div', { class: 'table-controls' });
   const body = el('div', { class: 'table-body' });
   wrap.append(controls, body);
+  let actions = null;
+
+  function selectedRows() {
+    return rows.filter((r) => selected.has(r.path));
+  }
+
+  function notify(message) {
+    if (ctx && ctx.notify) ctx.notify(message);
+  }
+
+  async function afterMutation() {
+    selected.clear();
+    if (onChanged) await onChanged();
+    else draw();
+  }
+
+  function goCompare() {
+    const paths = [...selected];
+    location.hash = `/compare?paths=${encodeURIComponent(paths.join(','))}`;
+  }
+
+  async function doDelete(targets) {
+    if (!targets.length) return;
+    const names = targets.map((r) => r.name || r.path.split('/').pop()).join('\n');
+    const ok = window.confirm(`${targets.length} 件の run をゴミ箱へ移動します。よろしいですか？\n\n${names}`);
+    if (!ok) return;
+    try {
+      for (const r of targets) await api.moveGroup(r.path, '_trash');
+      await afterMutation();
+    } catch (e) {
+      notify(`削除できませんでした: ${e.message}`);
+    }
+  }
+
+  async function doMove(targets, group) {
+    if (!targets.length) return;
+    try {
+      for (const r of targets) await api.moveGroup(r.path, group || null);
+      await afterMutation();
+    } catch (e) {
+      notify(`移動できませんでした: ${e.message}`);
+    }
+  }
+
+  function movePicker(targets) {
+    const details = el('details', { class: 'move-picker' });
+    const disabled = !targets.length;
+    const summary = el('summary', { class: 'btn', 'aria-disabled': disabled ? 'true' : null }, [
+      icon('move', { size: 14 }),
+      el('span', { text: '移動' }),
+    ]);
+    if (disabled) summary.addEventListener('click', (e) => e.preventDefault());
+    const input = el('input', {
+      type: 'text',
+      placeholder: '移動先の group 名（空で experiment 直下へ）',
+    });
+    const run = el('button', {
+      class: 'btn primary',
+      type: 'button',
+      onclick: async () => {
+        details.open = false;
+        await doMove(targets, input.value.trim());
+      },
+    }, [el('span', { text: '実行' })]);
+    details.append(
+      summary,
+      el('div', { class: 'move-picker-body' }, [input, run]),
+    );
+    return details;
+  }
+
+  function renderActions() {
+    if (!actions) return;
+    clear(actions);
+    if (!ctx) return;
+    const targets = selectedRows().filter((r) => r.kind === 'run');
+    actions.append(
+      ...[
+        selected.size
+          ? el('span', { class: 'sel-count', text: `${selected.size} 件選択中` })
+          : null,
+        el('button', {
+          class: 'btn',
+          type: 'button',
+          disabled: selected.size < 2,
+          title: '比較する（2 件以上選択）',
+          onclick: goCompare,
+        }, [icon('compare', { size: 14 }), el('span', { text: '比較' })]),
+        movePicker(targets),
+        el('button', {
+          class: 'btn danger',
+          type: 'button',
+          disabled: !targets.length,
+          title: 'run をゴミ箱へ移動する',
+          onclick: () => doDelete(targets),
+        }, [icon('trash', { size: 14 }), el('span', { text: '削除' })]),
+        selected.size
+          ? el('button', {
+              class: 'btn',
+              type: 'button',
+              title: '選択を解除',
+              onclick: () => { selected.clear(); renderActions(); draw(); },
+            }, [icon('x', { size: 14 }), el('span', { text: '解除' })])
+          : null,
+      ].filter(Boolean),
+    );
+  }
 
   function byParent() {
     // group の下の run を、その group 行の直後に畳んで出す。
@@ -170,18 +281,16 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table' } = {}) {
         : undefined,
     });
     if (ctx) {
-      const selected = ctx.selection().includes(row.path);
       tr.append(
         el('td', { class: 'pick' }, [
           el('input', {
             type: 'checkbox',
-            checked: selected,
-            title: '比較に追加',
+            checked: selected.has(row.path),
+            title: '選択（比較・削除・移動の対象）',
             onchange: (e) => {
-              const next = new Set(ctx.selection());
-              if (e.target.checked) next.add(row.path);
-              else next.delete(row.path);
-              ctx.setSelection([...next]);
+              if (e.target.checked) selected.add(row.path);
+              else selected.delete(row.path);
+              renderActions();
             },
           }),
         ]),
@@ -220,21 +329,26 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table' } = {}) {
     clear(controls);
     clear(body);
 
+    actions = ctx ? el('div', { class: 'table-actions' }) : null;
     controls.append(
-      el('label', { class: 'search' }, [
-        icon('search', { size: 14 }),
-        el('input', {
-          type: 'search',
-          placeholder: '名前・値で絞り込む',
-          value: filter,
-          oninput: (e) => {
-            filter = e.target.value;
-            draw();
-          },
-        }),
-      ]),
-      columnPicker(),
+      ...[
+        el('label', { class: 'search' }, [
+          icon('search', { size: 14 }),
+          el('input', {
+            type: 'search',
+            placeholder: '名前・値で絞り込む',
+            value: filter,
+            oninput: (e) => {
+              filter = e.target.value;
+              draw();
+            },
+          }),
+        ]),
+        actions,
+        columnPicker(),
+      ].filter(Boolean),
     );
+    renderActions();
 
     const shown = columns.filter((c) => visible.has(c.key));
     const table = el('table', { class: 'nodes' });
