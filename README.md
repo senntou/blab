@@ -177,7 +177,8 @@ runs/two-moons/20260913-063012_a1b2_baseline/
 - `resolved.yaml` には YAML に書いた値に加えて、コードから `.build()` に渡した値も記録され、
   それぞれの由来（YAML / `--set` / 実行時 / デフォルト値）が区別される
 - 使った component のソースが run にコピーされるので、component を編集・削除したあとでも
-  `blab run <run のパス>` で当時のコードのまま再実行できる
+  `blab run <run のパス>` で当時のコードのまま再実行できる（run のディレクトリが要る。
+  run を消しても残したい版には `blab tag` を打つ → [再現性](docs/best-practices.md#再現性)）
 - component は内容のハッシュで版が区別される。編集して実行するだけで新しい版として記録され、
   登録の操作は要らない
 - UI で、run 同士の構成の差分と、版が違う component のソースの差分を見られる
@@ -185,6 +186,9 @@ runs/two-moons/20260913-063012_a1b2_baseline/
 
 できないこと:
 
+- リポジトリだけからの再現。component は `blab tag` でラベルを付ければ git に載るが、実際に渡った
+  引数は run の `resolved.yaml` にしか残らない。再実行には run のディレクトリが要る
+  → [再現性](docs/best-practices.md#再現性)
 - 実行環境の再現。パッケージの版は `env.json` に記録するが、環境を揃える機能は無い
 - 数値の完全な再現。乱数シードや CUDA の非決定性の扱いは学習コード側で行う
 - ハイパーパラメータ探索。値を振るときはシェルのループなどで `blab run` を複数回呼ぶ
@@ -195,7 +199,7 @@ runs/two-moons/20260913-063012_a1b2_baseline/
 
 | | |
 | --- | --- |
-| [推奨する構成と運用](docs/best-practices.md) | プロジェクトの構成、component の分け方、CV やデータの扱い |
+| [推奨する構成と運用](docs/best-practices.md) | プロジェクトの構成、再現性、component の分け方、CV やデータの扱い |
 | [component](docs/components.md) | component の書き方、Builder、記録 API、ラベル |
 | [実験 YAML と実行](docs/experiments.md) | YAML の書式、事前検証、group / CV、外部ファイル、再実行 |
 | [UI](docs/ui.md) | 画面と操作 |

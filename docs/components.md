@@ -143,7 +143,8 @@ blab tag resnet18 v4 --from-run runs/cifar100/20260913-063012_a1b2_distill/
 ```
 
 - ラベルを付けた版は `components/.frozen/<id>/<label>/` にコピーされ、git で管理できる。
-  ラベルの無い版は `.blab/`（git 管理外）にだけ置かれる
+  ラベルの無い版は `.blab/`（git 管理外）と、その版を使った run の中にだけ置かれる。
+  どちらも消すと復元できない（[再現性](best-practices.md#再現性)）
 - `--from-run` を付けると、作業コピーではなく、その run にコピーされていたソースにラベルを付ける
 - 一度付けたラベルを別の版に付け替えることはできない
 - YAML では `use: resnet18@v3` のように参照する。`@latest` は最後に付けたラベルを指す
