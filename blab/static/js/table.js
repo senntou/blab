@@ -1,6 +1,6 @@
 // run テーブル。列は resolved.yaml の**構成**と summary.* から動的に作る。
 //
-// 「どの版の resnet18 を使った run か」でソート・フィルタできることが狙い（design.md §11）。
+// 「どの版の resnet18 を使った run か」でソート・フィルタできることが狙い。
 // group は折りたたみ行にし、集計（読むときに導出したもの）をその行に出す。
 
 import { api } from './api.js';

@@ -1,5 +1,5 @@
 # baseline と同じ、ただし model だけ差し替え。
-# 比較ビューはこれを「構成の diff」として見せる（design.md §11）。
+# 比較ビューはこれを「構成の diff」として見せる。
 experiment: two-moons
 name: mlp
 

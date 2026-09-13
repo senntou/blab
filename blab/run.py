@@ -10,8 +10,7 @@
 **記録は決して学習を落とさない。** 記録系の失敗は警告に落とす（`BLAB_STRICT=1` で送出）。
 唯一の例外は事前検証で、そちらは実行前に止まるので学習時間を失わない。
 
-v1 の `params.json` は**廃止**した。ハイパラは component の引数であり、`resolved.yaml` に
-全部入っている。
+ハイパラは component の引数であり、`resolved.yaml` に全部入っている（`params.json` は持たない）。
 """
 
 from __future__ import annotations

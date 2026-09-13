@@ -1,4 +1,4 @@
-"""Builder と観測（design.md §6）。
+"""Builder と観測。
 
 **blab は子 component を実体化しない。作り方（Builder）だけを渡す。**
 

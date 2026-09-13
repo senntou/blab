@@ -19,7 +19,7 @@ component の書き方は `@blab.entry` を 1 つ付けるだけ。
             model = self.model.build(k=train.n_classes)
             run.log({"train/loss": 0.31}, epoch=0)
 
-設計は docs/design.md、ディレクトリ仕様は docs/layout.md。
+使い方は README.md と docs/、保存形式は docs/layout.md。
 
 実行層は標準ライブラリと PyYAML だけで動く。UI（`blab ui`）は extra 依存。
 """

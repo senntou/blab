@@ -32,7 +32,7 @@ class TestGrammar:
         assert experiment.run.args["dataset"].id == "cifar100"
 
     def test_string_shorthand_is_not_a_reference(self):
-        """`metric: top1_accuracy` は普通の文字列引数（design.md §5.1 / A-3 の決定）。
+        """`metric: top1_accuracy` は普通の文字列引数。
 
         参照とみなすと、component を新規作成した瞬間に既存 YAML の意味が黙って変わる。
         """

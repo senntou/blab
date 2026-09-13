@@ -283,7 +283,7 @@ const HASH_KIND_LABEL = {
   manifest: 'ファイル一覧のみ（中身は読まない）',
 };
 
-/** 小さいファイル（run にコピー済み）の中身をその場に出す。design.md §8 の実演。 */
+/** 小さいファイル（run にコピー済み）の中身をその場に出す。 */
 function dataFilePreview(url) {
   const host = el('div', { class: 'data-preview' });
   fetch(url)

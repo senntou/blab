@@ -527,7 +527,7 @@ def cmd_ui(args) -> None:
     try:
         from .server import serve
     except ImportError:
-        _fail("UI の依存が入っていません。`uv pip install -e '.[ui]'` を実行してください")
+        _fail("UI の依存（fastapi / uvicorn）が入っていません。blab を `[ui]` extras 付きでインストールしてください")
         return
     serve(
         project,

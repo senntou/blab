@@ -1,7 +1,7 @@
 # blab のサンプルプロジェクト
 
 このディレクトリ自体が 1 つの blab プロジェクト（`blab.json` がある）である。
-**標準ライブラリだけで動く** two moons の 2 値分類で、v2 の仕組みを一通り使っている。
+**標準ライブラリだけで動く** two moons の 2 値分類で、blab の主な機能を一通り使っている。
 
 ```
 examples/
@@ -54,7 +54,7 @@ sed -i 's/epochs:/epocs:/' experiments/baseline.yaml && blab check experiments/b
 ## この例が見せていること
 
 **trainer も component である。** `standard_trainer/` がハッシュで凍結されるので、
-学習ループのコードも run から完全に復元できる。v1 で唯一凍結されていなかった場所。
+学習ループのコードも run から復元できる。
 
 **子は Builder として渡る。** `standard_trainer` の `__init__` が受け取る `dataset` は
 dataset ではなく、dataset の**作り方**である。
@@ -67,7 +67,7 @@ model = self.model.build(k=train.n_classes)    # 実行時にしか分からな�
 
 `k`（クラス数）は YAML のどこにも書かれていない。dataset を作るまで分からないからで、
 それでも記録には `k: 2` が `runtime` 由来として残る。**「YAML にそう書いてある」と
-「実際にそうである」がズレない**（design.md §6）。
+「実際にそうである」がズレない**。
 
 **構成の差し替えが YAML の 1 か所で済む。** `baseline.yaml` と `mlp.yaml` の違いは
 `model:` だけで、UI の比較ビューはこれを「構成の diff」として見せる。
@@ -108,6 +108,6 @@ blab run runs/two-moons/2026*_baseline/        # 焼き込まれた当時のコ�
 run に焼き込まれた `components/` を書き換えてから再実行すると、ハッシュが合わないので
 止まる。記録と実体が食い違ったまま動くことはない。
 
-## 実装の進み具合
+## UI で見る
 
-全部動く。`blab ui` でブラウザから構成ツリー・比較ビューが見られる（`uv pip install -e '.[ui]'` が必要）。
+`blab ui` を実行して http://127.0.0.1:8420 を開くと、構成ツリーや比較ビューが見られる（`blab[ui]` のインストールが必要）。

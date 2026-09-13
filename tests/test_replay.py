@@ -29,7 +29,7 @@ class TestTag:
         assert Meta.load(project, "resnet18").label_hash("v1") == hash
 
     def test_does_not_change_the_working_copy_hash(self, project):
-        """ラベルを本体の外に置いた理由そのもの（A-1 の決定）。"""
+        """ラベルを本体の外に置いた理由そのもの。"""
         before = hash_dir(project.components_dir / "resnet18")
         tag(project, "resnet18", "v1")
         assert hash_dir(project.components_dir / "resnet18") == before

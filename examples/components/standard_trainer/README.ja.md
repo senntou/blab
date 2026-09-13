@@ -19,5 +19,4 @@ train = self.dataset.build(split="train")    # YAML の引数 + ここの引数�
 model = self.model.build(k=train.n_classes)  # 実行時にしか分からない値を渡せる
 ```
 
-`k` は YAML のどこにも書かれていない。**実際にそう渡されたから、そう記録される**
-（design.md §6.3）。
+`k` は YAML のどこにも書かれていない。**実際にそう渡されたから、そう記録される**。

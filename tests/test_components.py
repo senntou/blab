@@ -67,7 +67,7 @@ class TestHash:
         assert hash_dir(a) != hash_dir(b)
 
     def test_tagging_does_not_change_the_hash(self, project):
-        """ラベルは本体の外（`.meta/`）に置く（design.md §4.1・A-1 の決定）。"""
+        """ラベルは本体の外（`.meta/`）に置く。"""
         path = project.components_dir / "resnet18"
         before = hash_dir(path)
         meta = Meta.load(project, "resnet18")

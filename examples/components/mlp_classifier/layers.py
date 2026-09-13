@@ -1,4 +1,4 @@
-"""component の中は自由。相対 import でヘルパを分けられる（design.md §4.1）。"""
+"""component の中は自由。相対 import でヘルパを分けられる。"""
 
 
 class Dense:

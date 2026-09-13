@@ -45,7 +45,7 @@ def test_init_writes_gitignore_without_duplicating(tmp_path):
 
 
 def test_project_uid_survives_directory_rename(tmp_path):
-    """ディレクトリ名を同一性の根拠にしない（design.md §3.2）。"""
+    """ディレクトリ名を同一性の根拠にしない。"""
     project, _ = init(tmp_path / "before")
     uid = project.uid
     (tmp_path / "before").rename(tmp_path / "after")
