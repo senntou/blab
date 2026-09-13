@@ -1,479 +1,251 @@
-"""Run オブジェクト（記録層の中心）。"""
+"""記録 API と run ディレクトリ（layout.md §4-5）。
+
+`execute(run)` が受け取る `run` が記録の入口。
+
+    run.log({"train/loss": 0.31}, epoch=3)       # 時系列 → metrics.jsonl
+    run.log_summary({"test/acc": 0.87})          # 1 run に 1 つの値 → summary.json
+    run.log_artifact("outputs/cm.png")           # ファイル → artifacts/
+    run.path                                     # run ディレクトリ
+
+**記録は決して学習を落とさない。** 記録系の失敗は警告に落とす（`BLAB_STRICT=1` で送出）。
+唯一の例外は事前検証で、そちらは実行前に止まるので学習時間を失わない。
+
+v1 の `params.json` は**廃止**した。ハイパラは component の引数であり、`resolved.yaml` に
+全部入っている。
+"""
 
 from __future__ import annotations
 
-import os
+import shutil
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import layout, registry, schema, snapshot
-from .errors import BlabError, BlabUsageError, guard, warn
-from .io import JsonlWriter, last_jsonl_record, read_json, write_json_atomic
-from .layout import (
-    ARTIFACTS_DIR,
-    COMPONENTS_NAME,
-    HEARTBEAT_INTERVAL_SEC,
-    LOGS_DIR,
-    META_NAME,
-    METRICS_NAME,
-    PARAMS_NAME,
-    SUMMARY_NAME,
-)
-from .schema import STATUS_FAILED, STATUS_FINISHED, STATUS_KILLED, STATUS_RUNNING
+from .errors import BlabError, guard, strict, warn
+from .ids import isoformat, now
+from .io import JsonlWriter, write_json_atomic
+from .project import SCHEMA_VERSION
 
-_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+KIND_EXPERIMENT = "experiment"
+KIND_GROUP = "group"
+KIND_RUN = "run"
+
+STATUS_RUNNING = "running"
+STATUS_FINISHED = "finished"
+STATUS_FAILED = "failed"
+STATUS_KILLED = "killed"
+
+META_NAME = "meta.json"
+SUMMARY_NAME = "summary.json"
+METRICS_NAME = "metrics.jsonl"
+ENV_NAME = "env.json"
+DATA_NAME = "data.json"
+ARTIFACTS_DIR = "artifacts"
+LOGS_DIR = "logs"
+COMPONENTS_DIR = "components"
+DATA_DIR = "data"
+
+#: heartbeat の更新間隔と、`stale` とみなすまでの時間（layout.md §5.1）。
+HEARTBEAT_INTERVAL_SEC = 15
+STALE_AFTER_SEC = 60
+
+#: `metrics.jsonl` の予約キー。
+RESERVED_METRIC_KEYS = ("_step", "_time", "_epoch")
 
 
 class Run:
-    """1 つの実行。ディレクトリに書くだけのオブジェクト。
+    """1 回の実験の記録。`blab run` が作り、`execute(run)` に渡す。"""
 
-    直接は生成せず :func:`blab.init` / :meth:`blab.Group.run` で作るか、
-    :func:`blab.open` で既存の run を開き直す。
-    """
-
-    def __init__(
-        self,
-        dir: Path,
-        root: Path,
-        meta: dict,
-        params: dict | None = None,
-        *,
-        flush_interval: float = 0.0,
-        on_finish=None,
-        existing: bool = False,
-        resume: bool = False,
-    ) -> None:
-        self.dir = Path(dir)
-        self.root = Path(root)
+    def __init__(self, path: Path, ulid: str, created: datetime, meta: dict) -> None:
+        self.path = Path(path)
+        self.id = ulid
+        self.created_at = created
         self._meta = meta
-        self._pid = os.getpid()
-        self._lock = threading.Lock()
-        self._next_step = 0
         self._summary: dict[str, Any] = {}
-        self._finished = False
-        self._policy_error: BlabError | None = None
-        self._on_finish = on_finish
-        self._started_monotonic = time.monotonic()
-        # 開き直した run（existing）は params を書き直さない。resume=True のときだけ
-        # status を running に戻し、heartbeat と経過時間の計測を再開する。
-        self._reopened = bool(existing)
-        self._resumed = bool(existing and resume)
-        self._elapsed_before = 0.0
-
-        (self.dir / ARTIFACTS_DIR).mkdir(parents=True, exist_ok=True)
-        (self.dir / LOGS_DIR).mkdir(parents=True, exist_ok=True)
-        if existing:
-            stored = read_json(self.dir / SUMMARY_NAME, {})
-            self._summary = dict(stored) if isinstance(stored, dict) else {}
-            self._next_step = _next_step_of(self.dir / METRICS_NAME)
-            self._elapsed_before = float(self._meta.get("duration_sec") or 0.0)
-            if self._resumed:
-                self._meta["status"] = STATUS_RUNNING
-                self._meta["finished_at"] = None
-                self._write_meta()
-        else:
-            self._write_meta()
-            write_json_atomic(self.dir / PARAMS_NAME, schema.normalize_params(params or {}))
-        self._metrics = JsonlWriter(self.dir / METRICS_NAME, flush_interval=flush_interval)
-        self._init_components()
-
-        self._stop = threading.Event()
+        self._metrics: JsonlWriter | None = None
+        self._step = 0
+        self._lock = threading.Lock()
         self._heartbeat: threading.Thread | None = None
-        if not existing or self._resumed:
-            self._heartbeat = threading.Thread(
-                target=self._heartbeat_loop, name=f"blab-heartbeat-{self.id}", daemon=True
-            )
-            self._heartbeat.start()
+        self._stop = threading.Event()
 
-    # ------------------------------------------------------------- 属性
-
-    @property
-    def id(self) -> str:
-        return self._meta["id"]
-
-    @property
-    def name(self) -> str | None:
-        return self._meta.get("name")
-
-    @property
-    def status(self) -> str:
-        return self._meta.get("status", STATUS_RUNNING)
-
-    @property
-    def path(self) -> str:
-        """ルートからの相対パス（UI の ``{path}`` と同じ表記）。"""
-        return layout.relpath(self.root, self.dir)
-
-    @property
-    def meta(self) -> dict:
-        return dict(self._meta)
-
-    def __repr__(self) -> str:  # pragma: no cover - デバッグ用
-        return f"<blab.Run {self.path} status={self.status}>"
-
-    # ------------------------------------------------------------- 内部
-
-    def _write_meta(self) -> None:
-        # fork した子プロセスからは書かない（rank0 / 単一プロセス書き込みの前提）。
-        if os.getpid() != self._pid:
-            return
-        write_json_atomic(self.dir / META_NAME, self._meta)
-
-    # --------------------------------------------------- 構成の記録（§4.1 / §4.2）
-
-    def _init_components(self) -> None:
-        """entrypoint を snapshot し、この run の binding 観測を始める。
-
-        開き直した run では既存の binding / entrypoint を保ったまま積み増す。
-        「この後付けの metric は何のコードが出したのか」に答えられるようにするため。
-        """
-        stored = read_json(self.dir / COMPONENTS_NAME, {}) or {}
-        if not isinstance(stored, dict):
-            stored = {}
-        existing = stored.get("bindings")
-        self._bindings_before: list[dict] = [b for b in existing if isinstance(b, dict)] if isinstance(existing, list) else []
-        entrypoints = stored.get("entrypoints")
-        self._entrypoints: list[dict] = [e for e in entrypoints if isinstance(e, dict)] if isinstance(entrypoints, list) else []
-
-        self._entrypoint_index = self._push_entrypoint(self._snapshot_entrypoint())
-        self._recorder = registry.BindingRecorder(
-            root=self.root,
-            start_index=len(self._bindings_before),
-            entrypoint=self._entrypoint_index,
-            on_change=lambda _rec: self._write_components(),
-        )
-        self._recorder_restore = registry.set_recorder(self._recorder)
-        self._warned_no_components = False
-        self._write_components()
-
-    def _push_entrypoint(self, record: dict) -> int:
-        """entrypoint を積む。同じスクリプトの同じ内容・同じ argv なら 1 件に畳む。
-
-        同じ後付けスクリプトを何度も当てても配列が伸び続けないようにするが、
-        **いつ最初に走っていつ最後に走ったか**は残す（回数を黙って消さない）。
-        """
-        key = (record.get("name"), record.get("hash"), record.get("argv"))
-        for index, existing in enumerate(self._entrypoints):
-            if (existing.get("name"), existing.get("hash"), existing.get("argv")) != key:
-                continue
-            existing["last_recorded_at"] = record.get("recorded_at")
-            existing["n_recorded"] = int(existing.get("n_recorded") or 1) + 1
-            for field in ("path", "first_party", "unresolved_imports", "skipped", "project_root"):
-                if record.get(field):
-                    existing[field] = record[field]
-            return index
-        self._entrypoints.append(record)
-        return len(self._entrypoints) - 1
-
-    def _snapshot_entrypoint(self) -> dict:
-        try:
-            return snapshot.snapshot_entrypoint(self.dir, self.root, argv=schema.cmdline())
-        except Exception as e:  # noqa: BLE001 - snapshot の失敗で学習を止めない
-            warn(f"entrypoint を snapshot できません: {e!r}")
-            return {
-                "name": None,
-                "path": None,
-                "hash": None,
-                "recorded_at": layout.isoformat(layout.now()),
-                "argv": schema.cmdline(),
-                "unresolved_imports": [f"snapshot に失敗しました: {e!r}"],
-            }
-
-    def _write_components(self) -> None:
-        """``components.json`` を書く。binding が増えるたびに呼ばれる。"""
-        if os.getpid() != self._pid:
-            return
-        bindings = []
-        for binding in self._recorder.bindings:
-            if binding.dirty and binding.snapshot is None and binding.source is not None:
-                binding.snapshot = snapshot.snapshot_dirty_component(
-                    self.dir, binding.id, binding.source
-                )
-            bindings.append(binding.to_json())
-        write_json_atomic(
-            self.dir / COMPONENTS_NAME,
-            schema.new_components_doc(self._bindings_before + bindings, self._entrypoints),
-        )
-
-    def _all_bindings(self) -> list[dict]:
-        return self._bindings_before + self._recorder.to_json()
-
-    @property
-    def components(self) -> list[dict]:
-        """この run で観測された binding（開き直す前のものを含む）。"""
-        return self._all_bindings()
-
-    def _check_policy(self) -> list[str]:
-        """``blab.json`` のポリシーを検査する（§3.5）。判定のみ。"""
-        try:
-            policy = schema.read_policy(self.root)
-            if policy.get("on_missing") == schema.ON_MISSING_IGNORE:
-                return []
-            return schema.check_policy(self.root, policy, self._all_bindings())
-        except Exception as e:  # noqa: BLE001 - 検査自体の失敗で学習を落とさない
-            warn(f"ポリシーを検査できません: {e!r}")
-            return []
-
-    def _warn_if_no_components(self) -> None:
-        """初回 log() での早期検知。8 時間学習してから知らされるのでは遅い（§3.5）。
-
-        load が log より後に来る書き方もありうるので、ここでは止めない。
-        """
-        if self._warned_no_components or self._all_bindings():
-            return
-        self._warned_no_components = True
-        try:
-            policy = schema.read_policy(self.root)
-        except Exception:  # noqa: BLE001
-            return
-        if policy.get("on_missing") == schema.ON_MISSING_ERROR and policy.get(
-            "require_components"
-        ):
-            warn(
-                "component を 1 つも load していません。"
-                "blab.json の on_missing=error なので、このままだと finish() で失敗します"
-            )
-
-    def _heartbeat_loop(self) -> None:
-        while not self._stop.wait(HEARTBEAT_INTERVAL_SEC):
-            try:
-                with self._lock:
-                    if self._finished:
-                        return
-                    self._meta["heartbeat_at"] = layout.isoformat(layout.now())
-                    self._write_meta()
-            except Exception as e:  # noqa: BLE001 - 学習本体に波及させない
-                warn(f"heartbeat failed: {e!r}")
-
-    # ------------------------------------------------------------- 記録 API
+    # ------------------------------------------------------------ 記録 API
 
     @guard
-    def log(self, data: dict, step: int | None = None, epoch: int | None = None) -> None:
-        """1 レコードを ``metrics.jsonl`` に追記する。
+    def log(self, values: dict, *, step: int | None = None, epoch: int | None = None) -> None:
+        """時系列の値を 1 行追記する。
 
-        ``step`` 省略時は内部カウンタで自動採番する（0 始まりで +1）。明示指定が
-        あればカウンタはその値に追従する。
+        `step` 省略時は run 内部のカウンタで自動採番する（0 始まりで +1。明示指定が
+        あればカウンタはその値に追従する）。
         """
-        record = schema.normalize_metrics(data)
-        self._warn_if_no_components()
+        if not isinstance(values, dict):
+            raise BlabError("run.log() にはマッピングを渡してください")
         with self._lock:
-            if self._finished:
-                raise BlabUsageError("log() called on a finished run")
             if step is None:
-                step = self._next_step
-            else:
-                step = int(step)
-            self._next_step = step + 1
-            row = {"_step": step, "_time": time.time()}
+                step = self._step
+            self._step = int(step) + 1
+            record: dict[str, Any] = {"_step": int(step), "_time": time.time()}
             if epoch is not None:
-                row["_epoch"] = int(epoch)
-            row.update(record)
-            self._metrics.write(row)
+                record["_epoch"] = int(epoch)
+            record.update(_clean_metric_keys(values))
+            if self._metrics is None:
+                self._metrics = JsonlWriter(self.path / METRICS_NAME)
+            self._metrics.write(record)
 
     @guard
-    def log_summary(self, data: dict) -> None:
-        """1 run につき 1 つのスカラ値群。複数回呼ぶと shallow merge（後勝ち）。"""
-        values = schema.normalize_summary(data)
+    def log_summary(self, values: dict) -> None:
+        """1 run に 1 つのスカラ値。複数回呼ぶと shallow merge（同キーは後勝ち）。"""
+        if not isinstance(values, dict):
+            raise BlabError("run.log_summary() にはマッピングを渡してください")
         with self._lock:
             self._summary.update(values)
-            write_json_atomic(self.dir / SUMMARY_NAME, self._summary)
+            write_json_atomic(self.path / SUMMARY_NAME, self._summary)
 
     @guard
-    def log_artifact(self, path: str | os.PathLike, name: str | None = None, mode: str = "copy") -> Path | None:
-        """ファイルを ``artifacts/`` に保存する。``mode`` は ``copy``（既定）か ``move``。"""
-        return layout.store_artifact(self.dir, Path(path), name, mode)
-
-    @guard
-    def log_image(self, key: str, image: Any) -> Path | None:
-        """画像を ``artifacts/`` に保存する薄いヘルパ。
-
-        パスならそのままコピーし、配列なら PIL で PNG として保存する。
-        """
-        if isinstance(image, (str, os.PathLike)):
-            src = Path(image)
-            suffix = src.suffix if src.suffix.lower() in _IMAGE_SUFFIXES else ".png"
-            return self.log_artifact(src, name=f"{key}{suffix}")
-        try:
-            from PIL import Image  # type: ignore
-        except ImportError as e:  # pragma: no cover - 環境依存
-            raise BlabError("log_image() with an array requires Pillow") from e
-        img = image if isinstance(image, Image.Image) else Image.fromarray(_as_uint8(image))
-        dest = layout.safe_join(self.dir / ARTIFACTS_DIR, f"{key}.png")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        img.save(dest)
-        return dest
-
-    # ------------------------------------------------------------- 終了
-
-    def finish(self, status: str | None = STATUS_FINISHED) -> None:
-        """run を終了させ、meta に最終状態を書く。二度目以降は何もしない。
-
-        ``status=None`` なら meta を書き換えず、書き込みだけ閉じる。**後付け記録の
-        ために開き直した run（``blab.open(..., resume=False)``）の既定はこちら**で、
-        終わった実験の status / 実行時間を後から塗り替えない。
-
-        ``blab.json`` の ``on_missing="error"`` でポリシー違反があった場合は、
-        **すべて書き切ってから**例外を投げる（§3.5）。データは失わせない。
-        """
-        self._finish(status)
-        error, self._policy_error = self._policy_error, None
-        if error is not None:
-            raise error
-
-    @guard
-    def _finish(self, status: str | None) -> None:
-        with self._lock:
-            if self._finished:
-                return
-            self._finished = True
-            self._stop.set()
-            self._metrics.close()
-            # 1. 構成の記録を締める。entrypoint の first-party 追跡は、実行が進んだ
-            #    あとの sys.modules を見るほうが完全になるのでここで撮り直す。
-            self._close_components()
-            # 2. ポリシーを検査して、違反を meta に永続化する（端末は揮発する）
-            violations = self._check_policy()
-            if violations:
-                self._meta["policy_violations"] = violations
-            # 3. status は finished のまま確定させる。ポリシー違反は記録の規律の
-            #    問題であって、実験の失敗ではない
-            if status is not None:
-                finished_at = layout.now()
-                self._meta["status"] = status
-                self._meta["finished_at"] = layout.isoformat(finished_at)
-                self._meta["duration_sec"] = round(
-                    self._elapsed_before + time.monotonic() - self._started_monotonic, 3
-                )
-                self._meta["heartbeat_at"] = layout.isoformat(finished_at)
-            self._meta.setdefault("env", {})
-            if isinstance(self._meta.get("env"), dict):
-                # 実体を snapshot しないインストール済みパッケージは、名前と version を残す
-                self._meta["env"]["packages"] = snapshot.installed_packages()
-            self._write_meta()
-            # 4. そのうえで例外を投げる（送出は guard の外側の finish() で行う）
-            if violations and self._policy_mode() == schema.ON_MISSING_ERROR:
-                self._policy_error = BlabError(
-                    "blab.json のポリシー違反: " + " / ".join(violations)
-                )
-            elif violations:
-                warn("blab.json のポリシー違反: " + " / ".join(violations))
-        if self._on_finish is not None:
-            self._on_finish(self)
-
-    def _policy_mode(self) -> str:
-        try:
-            return str(schema.read_policy(self.root).get("on_missing"))
-        except Exception:  # noqa: BLE001
-            return schema.ON_MISSING_WARN
-
-    def _close_components(self) -> None:
-        registry.set_recorder(self._recorder_restore)
-        try:
-            refreshed = self._snapshot_entrypoint()
-            current = self._entrypoints[self._entrypoint_index]
-            # 初回の recorded_at と回数は保ったまま、追跡結果だけ更新する
-            for field in ("path", "hash", "first_party", "unresolved_imports", "skipped", "project_root"):
-                if field in refreshed:
-                    current[field] = refreshed[field]
-            self._write_components()
-        except Exception as e:  # noqa: BLE001 - 記録の失敗で学習を落とさない
-            warn(f"components を締められません: {e!r}")
-
-    def __enter__(self) -> "Run":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> bool:
-        if self._reopened and not self._resumed:
-            # 後付け記録のために開いただけ。元の実験の status は触らない。
-            status: str | None = None
-        elif exc_type is None:
-            status = STATUS_FINISHED
-        elif issubclass(exc_type, KeyboardInterrupt):
-            status = STATUS_KILLED
+    def log_artifact(self, source: Path | str, name: str | None = None) -> Path | None:
+        """ファイルを `artifacts/` にコピーする。"""
+        source = Path(source)
+        if not source.exists():
+            raise BlabError(f"アーティファクトがありません: {source}")
+        target = self.path / ARTIFACTS_DIR / (name or source.name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_dir():
+            shutil.copytree(source, target, dirs_exist_ok=True)
         else:
-            status = STATUS_FAILED
-        self._finish(status)
-        error, self._policy_error = self._policy_error, None
-        if error is None:
-            return False
-        if exc_type is not None:
-            # 学習が落ちた原因のほうが重い。ポリシー違反は警告に落として隠さない。
-            warn(str(error))
-            return False
-        raise error
+            shutil.copy2(source, target)
+        return target
+
+    @property
+    def summary(self) -> dict:
+        return dict(self._summary)
+
+    # ------------------------------------------------------------ 状態
+
+    def _write_meta(self) -> None:
+        write_json_atomic(self.path / META_NAME, self._meta, indent=2)
+
+    def start_heartbeat(self) -> None:
+        """`heartbeat_at` を 15 秒毎に更新する（プロセス強制終了の検出用）。"""
+        if self._heartbeat is not None:
+            return
+
+        def beat() -> None:
+            while not self._stop.wait(HEARTBEAT_INTERVAL_SEC):
+                try:
+                    self._meta["heartbeat_at"] = isoformat(now())
+                    self._write_meta()
+                except Exception:  # noqa: BLE001 - 記録は学習を落とさない
+                    return
+
+        self._heartbeat = threading.Thread(target=beat, daemon=True, name="blab-heartbeat")
+        self._heartbeat.start()
+
+    def finish(self, status: str, exit: dict | None = None) -> None:
+        """run を終了状態にする。"""
+        self._stop.set()
+        finished = now()
+        self._meta["status"] = status
+        self._meta["finished_at"] = isoformat(finished)
+        self._meta["duration_sec"] = round(
+            (finished - self.created_at).total_seconds(), 3
+        )
+        self._meta["heartbeat_at"] = isoformat(finished)
+        if exit is not None:
+            self._meta["exit"] = exit
+        self._write_meta()
+        if self._metrics is not None:
+            self._metrics.close()
+            self._metrics = None
 
 
-def _as_uint8(array: Any):
-    """float 配列（0..1 想定）を uint8 に直す。それ以外はそのまま返す。"""
-    try:
-        import numpy as np  # type: ignore
-    except ImportError:  # pragma: no cover - 環境依存
-        return array
-    arr = np.asarray(array)
-    if arr.dtype.kind == "f":
-        hi = float(arr.max()) if arr.size else 1.0
-        arr = arr * 255.0 if hi <= 1.0 else arr
-        arr = np.clip(arr, 0, 255)
-    return arr.astype("uint8")
+def _clean_metric_keys(values: dict) -> dict:
+    """予約キーとドットを弾く。
+
+    UI は `optim.lr` のようにドット区切りでフラット化して列にするので、**キーに
+    ドットは使えない**。既定では警告して `_` に置換、`BLAB_STRICT=1` ならエラー。
+    """
+    out = {}
+    for key, value in values.items():
+        name = str(key)
+        if name in RESERVED_METRIC_KEYS:
+            raise BlabError(f"{name!r} は blab の予約キーです")
+        if "." in name:
+            if strict():
+                raise BlabError(f"metric のキーにドットは使えません: {name!r}")
+            warn(f"metric のキー {name!r} のドットを _ に置き換えました")
+            name = name.replace(".", "_")
+        out[name] = value
+    return out
 
 
-def create_run(
-    parent: Path,
-    root: Path,
+# ------------------------------------------------------------- ディレクトリ
+
+
+def read_meta(path: Path) -> dict | None:
+    from .io import read_json
+
+    doc = read_json(Path(path) / META_NAME, default=None)
+    return doc if isinstance(doc, dict) else None
+
+
+def new_meta(
+    kind: str,
+    ulid: str,
+    created: datetime,
     *,
     name: str | None = None,
-    params: dict | None = None,
-    tags=None,
-    notes: str = "",
-    flush_interval: float = 0.0,
-    on_finish=None,
-) -> Run:
-    """``parent`` の下に run ディレクトリを作って :class:`Run` を返す。"""
-    path, ulid, created = layout.create_node_dir(Path(parent), name)
-    meta = schema.new_run_meta(id=ulid, name=name, created_at=created, tags=tags, notes=notes)
-    return Run(path, root, meta, params, flush_interval=flush_interval, on_finish=on_finish)
+    project_uid: str | None = None,
+    source: str | None = None,
+    extra: dict | None = None,
+) -> dict:
+    meta: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "kind": kind,
+        "id": ulid,
+        "name": name,
+        "created_at": isoformat(created),
+    }
+    if kind == KIND_RUN:
+        meta.update(
+            {
+                "status": STATUS_RUNNING,
+                "project_uid": project_uid,
+                "source": source,
+                "finished_at": None,
+                "duration_sec": None,
+                "heartbeat_at": isoformat(created),
+                "exit": None,
+            }
+        )
+    meta["tags"] = []
+    meta["notes"] = ""
+    if extra:
+        meta.update(extra)
+    return meta
 
 
-def _next_step_of(metrics_path: Path) -> int:
-    """既存 ``metrics.jsonl`` の続きの step 番号（最終行 + 1、無ければ 0）。"""
-    last = last_jsonl_record(metrics_path)
-    if not last:
-        return 0
-    try:
-        return int(last.get("_step", -1)) + 1
-    except (TypeError, ValueError):
-        return 0
+def ensure_container(path: Path, kind: str, name: str) -> None:
+    """Experiment / Group のディレクトリと `meta.json` を用意する。
 
-
-def open_run(
-    dir: Path,
-    root: Path,
-    *,
-    resume: bool = False,
-    flush_interval: float = 0.0,
-    on_finish=None,
-) -> Run:
-    """既存の run ディレクトリを開き直して :class:`Run` を返す。
-
-    ``params.json`` は書き換えず、``summary.json`` は読み込んでからマージする
-    （後付けの `log_summary` が既存キーを消さない）。``metrics.jsonl`` は追記で、
-    step は最終行の続きから採番する。
+    **複数プロセスが競合しうる**（同じ group 名を名乗る run を並列で回す場合）ので、
+    `makedirs(exist_ok=True)` と「無ければ書く」で扱い、既にあれば黙って使う。
     """
-    dir = Path(dir)
-    meta = layout.read_meta(dir)
-    if meta is None:
-        raise BlabError(f"run ではありません（meta.json が無い）: {dir}")
-    if meta.get("kind") != layout.KIND_RUN:
-        raise BlabError(f"{dir} は {meta.get('kind')} であって run ではありません")
-    return Run(
-        dir, root, meta,
-        flush_interval=flush_interval, on_finish=on_finish,
-        existing=True, resume=resume,
-    )
+    import os
 
+    from .ids import new_ulid
 
-def load_summary(run_dir: Path) -> dict:
-    data = read_json(Path(run_dir) / SUMMARY_NAME, {})
-    return data if isinstance(data, dict) else {}
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+    meta_path = path / META_NAME
+    if meta_path.exists():
+        return
+    meta = new_meta(kind, new_ulid(), now(), name=name)
+    from .io import dumps
+
+    try:
+        fd = os.open(meta_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        return  # 別プロセスが先に書いた。
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(dumps(meta, indent=2) + "\n")

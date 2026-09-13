@@ -1,85 +1,70 @@
-// サーバ API の薄いラッパ。閲覧層は読み取りしかしないので GET しかない。
+// 閲覧層の HTTP クライアント。
+//
+// サーバはディレクトリを読むだけで、書き込みは moveGroup（= blab mv）だけ。
 
-async function get(url) {
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+async function request(path, { method = 'GET', body = null } = {}) {
+  const options = { method, headers: {} };
+  if (body !== null) {
+    options.headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(body);
+  }
+  const res = await fetch(path, options);
   if (!res.ok) {
-    let detail = res.statusText;
+    let detail = `${res.status} ${res.statusText}`;
     try {
-      detail = (await res.json()).detail || detail;
+      const doc = await res.json();
+      if (doc && doc.detail) detail = doc.detail;
     } catch (e) {
-      /* JSON でないエラー本文は無視する */
+      // JSON でない応答。ステータス行をそのまま使う。
     }
-    throw new Error(`${res.status}: ${detail}`);
+    throw new Error(detail);
   }
   return res.json();
 }
-
-async function send(method, url, body) {
-  const res = await fetch(url, {
-    method,
-    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      detail = (await res.json()).detail || detail;
-    } catch (e) {
-      /* JSON でないエラー本文は無視する */
-    }
-    throw new Error(`${res.status}: ${detail}`);
-  }
-  return res.json();
-}
-
-let rootPromise = null;
-
-export const api = {
-  status: () => get('/api/status'),
-  // ルートの絶対パスは実行中変わらないので一度だけ取得してキャッシュする。
-  root: () => {
-    if (!rootPromise) rootPromise = get('/api/status').then((s) => s.root);
-    return rootPromise;
-  },
-  tree: () => get('/api/tree'),
-  nodes: (experiment, kind) => {
-    const q = new URLSearchParams();
-    if (experiment) q.set('experiment', experiment);
-    if (kind) q.set('kind', kind);
-    const qs = q.toString();
-    return get(`/api/nodes${qs ? `?${qs}` : ''}`);
-  },
-  run: (path) => get(`/api/runs/${encodePath(path)}`),
-  metrics: (path, keys, maxPoints = 2000) => {
-    const q = new URLSearchParams();
-    if (keys && keys.length) q.set('keys', keys.join(','));
-    q.set('max_points', String(maxPoints));
-    return get(`/api/runs/${encodePath(path)}/metrics?${q}`);
-  },
-  artifacts: (path) => get(`/api/runs/${encodePath(path)}/artifacts`),
-  // ★ blab: component と、run に snapshot されたソース
-  components: (tags) => get(`/api/components${tags && tags.length ? `?tags=${encodeURIComponent(tags.join(','))}` : ''}`),
-  component: (id) => get(`/api/components/${encodeURIComponent(id)}`),
-  componentSource: (id, version) => {
-    const q = version ? `?version=${encodeURIComponent(version)}` : '';
-    return get(`/api/components/${encodeURIComponent(id)}/source${q}`);
-  },
-  componentDiff: (id, a, b) =>
-    get(`/api/components/${encodeURIComponent(id)}/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
-  componentRuns: (id) => get(`/api/components/${encodeURIComponent(id)}/runs`),
-  code: (path, name) => get(`/api/runs/${encodePath(path)}/code/${encodePath(name)}`),
-  aggregate: (path) => get(`/api/groups/${encodePath(path)}/aggregate`),
-  renameNode: (path, name) => send('PATCH', `/api/nodes/${encodePath(path)}`, { name }),
-  deleteNode: (path) => send('DELETE', `/api/nodes/${encodePath(path)}`),
-};
 
 export function encodePath(path) {
-  return String(path)
+  return String(path || '')
     .split('/')
     .map(encodeURIComponent)
     .join('/');
 }
 
-export function fileUrl(runPath, relPath) {
-  return `/files/${encodePath(runPath)}/${encodePath(relPath)}`;
+export function fileUrl(path) {
+  return `/files/${encodePath(path)}`;
 }
+
+function query(params) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === null || value === undefined || value === '') continue;
+    search.set(key, value);
+  }
+  const text = search.toString();
+  return text ? `?${text}` : '';
+}
+
+export const api = {
+  root: '',
+
+  status: () => request('/api/status'),
+  experiments: () => request('/api/experiments'),
+  nodes: (params = {}) => request(`/api/nodes${query(params)}`),
+
+  detail: (path) => request(`/api/nodes/${encodePath(path)}/detail`),
+  metrics: (path, params = {}) => request(`/api/nodes/${encodePath(path)}/metrics${query(params)}`),
+  runSource: (path, file) => request(`/api/nodes/${encodePath(path)}/source${query({ file })}`),
+  log: (path, name, tail = 0) => request(`/api/nodes/${encodePath(path)}/log${query({ name, tail })}`),
+
+  components: (params = {}) => request(`/api/components${query(params)}`),
+  component: (id) => request(`/api/components/${encodeURIComponent(id)}`),
+  componentFiles: (id, hash) =>
+    request(`/api/components/${encodeURIComponent(id)}/files${query({ hash })}`),
+  componentSource: (id, file, hash) =>
+    request(`/api/components/${encodeURIComponent(id)}/source${query({ file, hash })}`),
+  componentDiff: (id, a, b) =>
+    request(`/api/components/${encodeURIComponent(id)}/diff${query({ a, b })}`),
+
+  // UI が行う唯一の書き込み。blab mv と同じ操作を呼ぶ。
+  moveGroup: (path, group) =>
+    request(`/api/nodes/${encodePath(path)}/group`, { method: 'POST', body: { group } }),
+};

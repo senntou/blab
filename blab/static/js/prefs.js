@@ -1,100 +1,44 @@
-// UI 設定。保存先はブラウザではなく、サーバ側の <root>/.blab-ui/prefs.json。
+// UI 設定（開いていたタブ、列の表示、並び順など）。
 //
-// 起動時に一括で読み込み、以降は同期的に読める。書き込みはキー単位で
-// デバウンスして PUT する（列のチェックを連打しても 1 回にまとまる）。
+// **localStorage に置く。** v1 はルート直下の .blab-ui/ に書いていたが、v2 の閲覧層は
+// 読み取り専用と決めた（layout.md §9。唯一の例外は run の group 付け替え）。UI の都合の
+// 状態のために記録ディレクトリへ書くのは、その約束と引き換えにするほどの価値がない。
 
-const SAVE_DELAY_MS = 400;
+const KEY = 'blab.prefs.v2';
 
-let cache = {};
-let loaded = false;
-let onError = () => {};
-const pending = new Map(); // key -> timer
+let cache = null;
 
-/** 起動時に 1 回だけ呼ぶ。失敗してもメモリ上の設定だけで動く。 */
-export async function initPrefs(errorHandler) {
-  if (errorHandler) onError = errorHandler;
+function load() {
+  if (cache) return cache;
   try {
-    const res = await fetch('/api/prefs', { headers: { Accept: 'application/json' } });
-    if (!res.ok) throw new Error(String(res.status));
-    const data = await res.json();
-    cache = data.prefs && typeof data.prefs === 'object' ? data.prefs : {};
+    cache = JSON.parse(window.localStorage.getItem(KEY) || '{}') || {};
   } catch (e) {
     cache = {};
   }
-  loaded = true;
   return cache;
 }
 
-export function prefsLoaded() {
-  return loaded;
-}
-
-/** 保存済みの値。無ければ fallback を返す（オブジェクトなら浅くマージする）。 */
-export function getPref(key, fallback = null) {
-  const v = cache[key];
-  if (v === undefined || v === null) return fallback;
-  if (fallback && typeof fallback === 'object' && !Array.isArray(fallback) &&
-      typeof v === 'object' && !Array.isArray(v)) {
-    return { ...fallback, ...v };
+function save() {
+  try {
+    window.localStorage.setItem(KEY, JSON.stringify(cache));
+  } catch (e) {
+    // 容量超過やプライベートモード。設定が残らないだけなので黙って諦める。
   }
-  return v;
 }
 
-/** 値を保存する。null を渡すとそのキーを消す（＝既定に戻す）。 */
+export function getPref(key, fallback = null) {
+  const store = load();
+  return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : fallback;
+}
+
 export function setPref(key, value) {
+  load();
   if (value === null || value === undefined) delete cache[key];
   else cache[key] = value;
-  clearTimeout(pending.get(key));
-  pending.set(key, setTimeout(() => flushKey(key, value), SAVE_DELAY_MS));
+  save();
+  return cache;
 }
 
-async function flushKey(key, value) {
-  pending.delete(key);
-  try {
-    const res = await fetch(`/api/prefs?key=${encodeURIComponent(key)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(value ?? null),
-    });
-    if (!res.ok) throw new Error(`${res.status}`);
-  } catch (e) {
-    onError(`設定を保存できませんでした (${key})`);
-  }
-}
-
-/** ページを閉じる直前に、たまっている保存を投げ切る。 */
-export function flushPrefs() {
-  for (const [key] of pending) {
-    clearTimeout(pending.get(key));
-    const body = JSON.stringify(cache[key] ?? null);
-    const url = `/api/prefs?key=${encodeURIComponent(key)}`;
-    // unload 中は fetch が中断されうるので keepalive を付ける。
-    try {
-      fetch(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body, keepalive: true });
-    } catch (e) {
-      /* 保存できなくても表示には影響しない */
-    }
-  }
-  pending.clear();
-}
-
-/**
- * 1 つのキーにぶら下がる設定オブジェクトを扱う小さなヘルパ。
- * `const s = prefState('table:mnist', {dense:false}); s.dense = true;` で保存される。
- */
-export function prefState(key, defaults) {
-  const stored = getPref(key, null);
-  const state = { ...defaults, ...(stored && typeof stored === 'object' ? stored : {}) };
-  return new Proxy(state, {
-    set(target, prop, value) {
-      target[prop] = value;
-      setPref(key, { ...target });
-      return true;
-    },
-    deleteProperty(target, prop) {
-      delete target[prop];
-      setPref(key, { ...target });
-      return true;
-    },
-  });
+export function loadPrefs() {
+  load();
 }

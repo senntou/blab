@@ -1,0 +1,15 @@
+# `--set` で 1 か所だけ振るための YAML。
+#   for s in 0.1 0.2 0.3; do
+#     blab run experiments/noisy.yaml --group noise-sweep --set run.dataset.noise=$s --name n$s
+#   done
+experiment: two-moons
+group: noise-sweep
+name: noisy
+
+run:
+  use: standard_trainer
+  epochs: 30
+  seed: 0
+  dataset: {use: two_moons, n: 600, noise: 0.2}
+  model: {use: linear_classifier, lr: 0.1}
+  metric: {use: accuracy}

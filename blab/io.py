@@ -16,8 +16,17 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-def dumps(obj: Any) -> str:
-    return json.dumps(obj, ensure_ascii=False, allow_nan=False, default=_fallback)
+def _umask() -> int:
+    """現在の umask を読む（読むだけの API が無いので一度だけ設定して戻す）。"""
+    current = os.umask(0)
+    os.umask(current)
+    return current
+
+
+def dumps(obj: Any, indent: int | None = None) -> str:
+    return json.dumps(
+        obj, ensure_ascii=False, allow_nan=False, default=_fallback, indent=indent
+    )
 
 
 def _fallback(o: Any) -> Any:
@@ -32,13 +41,19 @@ def _fallback(o: Any) -> Any:
     return str(o)
 
 
-def write_json_atomic(path: Path, obj: Any) -> None:
-    """``path`` に JSON を原子的に書く。"""
+def write_json_atomic(path: Path, obj: Any, indent: int | None = None) -> None:
+    """``path`` に JSON を原子的に書く。
+
+    ``indent`` は人が編集する git 管理下のファイル（``blab.json`` など）に使う。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
     try:
+        # mkstemp は 0600 で作る。これらは git に載る普通のファイルなので、
+        # umask を尊重した通常のパーミッションに直す。
+        os.chmod(tmp, 0o666 & ~_umask())
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(dumps(obj))
+            f.write(dumps(obj, indent=indent))
             f.write("\n")
             f.flush()
             os.fsync(f.fileno())

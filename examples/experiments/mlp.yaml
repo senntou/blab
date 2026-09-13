@@ -1,0 +1,21 @@
+# baseline と同じ、ただし model だけ差し替え。
+# 比較ビューはこれを「構成の diff」として見せる（design.md §11）。
+experiment: two-moons
+name: mlp
+
+run:
+  use: standard_trainer
+  epochs: 30
+  seed: 0
+
+  dataset:
+    use: two_moons
+    n: 600
+    noise: 0.2
+
+  model:
+    use: mlp_classifier
+    hidden: 16
+    lr: 0.1
+
+  metric: {use: accuracy}

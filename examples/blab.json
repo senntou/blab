@@ -1,0 +1,9 @@
+{
+  "schema_version": 2,
+  "project": "blab-example",
+  "project_uid": "01M2C31NDKYN8N5SRGMAK8PT7H",
+  "components_dir": "components",
+  "experiments_dir": "experiments",
+  "runs_dir": null,
+  "require_tags": []
+}

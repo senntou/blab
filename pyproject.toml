@@ -1,10 +1,10 @@
 [project]
 name = "blab"
-version = "0.1.0"
-description = "実験の構成要素を一級市民にする、ファイルシステムだけで動く実験管理ツール"
+version = "0.2.0"
+description = "実験を、再現できるコードの木として記録する実験管理ツール"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["pyyaml>=6"]
 
 [project.optional-dependencies]
 ui = ["fastapi>=0.110", "uvicorn>=0.29"]

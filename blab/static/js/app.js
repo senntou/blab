@@ -2,7 +2,7 @@
 
 import { api } from './api.js';
 import { icon } from './icons.js';
-import { flushPrefs, getPref, initPrefs, setPref } from './prefs.js';
+import { getPref, loadPrefs, setPref } from './prefs.js';
 import { el, clear, copyButton } from './util.js';
 import { experimentsView } from './views/experiments.js';
 import { runsView } from './views/runs.js';
@@ -131,9 +131,11 @@ async function showRoot() {
     const status = await api.status();
     clear(label);
     label.append(
+      icon('box', { size: 14 }),
+      el('span', { class: 'project-name', text: status.project }),
       icon('folder', { size: 14 }),
-      el('code', { class: 'root-text', text: status.root, title: status.root }),
-      copyButton(status.root, { title: 'ルートのパスをコピー' }),
+      el('code', { class: 'root-text', text: status.runs_dir, title: status.runs_dir }),
+      copyButton(status.runs_dir, { title: 'ログルートのパスをコピー' }),
     );
   } catch (e) {
     showError('サーバに接続できません');
@@ -141,7 +143,7 @@ async function showRoot() {
 }
 
 async function boot() {
-  await initPrefs(showError);
+  loadPrefs();
   const stored = getPref(SELECTION_KEY, []);
   selection = Array.isArray(stored) ? stored : [];
   renderSelectionBar();
@@ -150,5 +152,4 @@ async function boot() {
 }
 
 window.addEventListener('hashchange', route);
-window.addEventListener('pagehide', flushPrefs);
 boot();

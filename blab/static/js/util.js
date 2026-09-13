@@ -1,6 +1,5 @@
 // DOM と整形のごく薄いヘルパ。フレームワークは入れない。
 
-import { api } from './api.js';
 import { icon, statusDot } from './icons.js';
 import { getPref, setPref } from './prefs.js';
 
@@ -145,57 +144,6 @@ export function pathField(label, value, iconName = 'folder') {
     el('code', { class: 'path-value', text: value }),
     copyButton(value, { title: `${label || 'パス'}をコピー` }),
   ]);
-}
-
-/**
- * run / group / experiment 共通のリネーム・削除ボタン。
- * リネームは meta.json の name を書き換えるだけ、削除はゴミ箱（.blab-trash）へ移動するだけなので
- * 確認ダイアログはあるがネイティブ prompt/confirm で十分と判断している。
- *
- * @param {string} path
- * @param {string} name 現在の表示名（確認ダイアログに出す）
- * @param {object} opts {onRenamed, onDeleted, notify}
- */
-export function nodeActions(path, name, { onRenamed, onDeleted, notify } = {}) {
-  const wrap = el('span', { class: 'node-actions' });
-  wrap.append(
-    el('button', {
-      class: 'icon-btn',
-      type: 'button',
-      title: '名前を変更',
-      onclick: async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const next = window.prompt('新しい名前', name);
-        if (next === null) return;
-        const trimmed = next.trim();
-        if (!trimmed || trimmed === name) return;
-        try {
-          const res = await api.renameNode(path, trimmed);
-          if (onRenamed) onRenamed(res.name);
-        } catch (e) {
-          if (notify) notify(`名前を変更できませんでした: ${e.message}`);
-        }
-      },
-    }, [icon('edit', { size: 14 })]),
-    el('button', {
-      class: 'icon-btn danger',
-      type: 'button',
-      title: '削除（.blab-trash へ移動）',
-      onclick: async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!window.confirm(`「${name}」を削除しますか？\n（即座には消えず .blab-trash へ移動します）`)) return;
-        try {
-          await api.deleteNode(path);
-          if (onDeleted) onDeleted();
-        } catch (e) {
-          if (notify) notify(`削除できませんでした: ${e.message}`);
-        }
-      },
-    }, [icon('trash', { size: 14 })]),
-  );
-  return wrap;
 }
 
 /**

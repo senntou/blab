@@ -1,0 +1,16 @@
+# いちばん素朴な構成。`blab run experiments/baseline.yaml` で回る。
+experiment: two-moons
+name: baseline
+
+run:
+  use: standard_trainer        # `use` を持つマッピングは component 参照
+  epochs: 30                   # 残りは全部その引数
+  seed: 0
+
+  dataset:                     # 引数の位置に、そのまま子を書く
+    use: two_moons
+    n: 600
+    noise: 0.2
+
+  model: {use: linear_classifier, lr: 0.1}
+  metric: {use: accuracy}

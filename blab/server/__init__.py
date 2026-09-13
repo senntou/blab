@@ -1,4 +1,4 @@
-"""閲覧層のサーバ（読み取り専用）。"""
+"""閲覧層（`blab ui`）。"""
 
 from .app import create_app, serve
 
