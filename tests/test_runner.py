@@ -101,6 +101,33 @@ class TestStatus:
         doc = yaml.safe_load((outcome.run.path / RESOLVED_NAME).read_text())
         assert doc["run"]["children"]["dataset"]["builds"][0]["args"]["split"] == "train"
 
+    def test_provisional_resolved_is_written_while_running(self, project):
+        """実行中から仮の `resolved.yaml` があり、build のたびに埋まり、終了時に確定する。"""
+        write_component(
+            project,
+            "peek",
+            "import json\nimport blab\n\n@blab.entry\nclass Peek:\n"
+            "    def __init__(self, dataset):\n        self.dataset = dataset\n"
+            "    def execute(self, run):\n"
+            "        path = run.path / 'resolved.yaml'\n"
+            "        before = path.read_text()\n"
+            "        self.dataset.build(split='train')\n"
+            "        after = path.read_text()\n"
+            "        (run.path / 'seen.json').write_text(json.dumps([before, after]))\n",
+        )
+        outcome = go(project, "experiment: x\nrun: {use: peek, dataset: {use: cifar100}}\n")
+        before, after = (
+            yaml.safe_load(t) for t in json.loads((outcome.run.path / "seen.json").read_text())
+        )
+        assert before["provisional"] is True
+        assert before["run"]["use"] == "peek"
+        assert before["run"]["children"]["dataset"]["builds"] == []
+        assert after["provisional"] is True
+        assert after["run"]["children"]["dataset"]["builds"][0]["args"]["split"] == "train"
+
+        final = yaml.safe_load((outcome.run.path / RESOLVED_NAME).read_text())
+        assert "provisional" not in final
+
     def test_keyboard_interrupt_is_killed_not_failed(self, project):
         write_component(
             project,

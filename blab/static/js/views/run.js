@@ -4,6 +4,7 @@ import { api, fileUrl } from '../api.js';
 import { artifactBrowser } from '../artifacts.js';
 import { lineChart, seriesPoints } from '../chart.js';
 import { argsTable, configTree, flattenTree, renderValue, shortHash, versionLabel, versionTitle } from '../config-tree.js';
+import { countLabel, filterBox, filteredTable, rankByQuery } from '../filter.js';
 import { icon, statusDot } from '../icons.js';
 import { getPref, setPref } from '../prefs.js';
 import { codeBlock, markdownBlock } from '../source.js';
@@ -46,20 +47,17 @@ function exitPanel(meta) {
   ]);
 }
 
-function summaryPanel(detail) {
-  const summary = detail.summary || {};
-  const names = Object.keys(summary).sort();
-  if (!names.length) return null;
-  const list = el('div', { class: 'summary-tiles' });
-  for (const name of names) {
-    list.append(
-      el('div', { class: 'tile' }, [
-        el('span', { class: 'tile-label', text: name }),
-        el('span', { class: 'tile-value' }, [renderValue(summary[name])]),
-      ]),
-    );
-  }
-  return list;
+/** summary タブ。値は数百になりうるので、カードではなく絞り込める表にする。 */
+function summaryPanel(summary) {
+  const names = Object.keys(summary || {}).sort();
+  if (!names.length) return el('p', { class: 'muted pad', text: 'summary.json がありません' });
+  return filteredTable({
+    keys: names,
+    head: ['名前', '値'],
+    prefKey: 'filter.run.summary',
+    className: 'args summary-table',
+    row: (name) => el('tr', {}, [el('th', { text: name }), el('td', {}, [renderValue(summary[name])])]),
+  });
 }
 
 // component の README は version が変わらない限り同じ内容。タブを行き来しても
@@ -154,7 +152,16 @@ function configDetailPanel(nodePath, node, buildIndex = null) {
 /** 構成タブ本体。左に木、右に選んだ component の詳細（説明・ハイパーパラメータ）。 */
 function configPanel(resolved) {
   const flat = flattenTree(resolved);
-  const host = el('div', { class: 'config-layout' });
+  const layout = el('div', { class: 'config-layout' });
+  const host = resolved && resolved.provisional
+    ? el('div', {}, [
+        el('p', { class: 'provisional-note' }, [
+          icon('info', { size: 14 }),
+          el('span', { text: '実行途中の仮の記録です。.build() が呼ばれるたびに更新され、終了時に確定します（まだ呼ばれていない build の引数は出ません）。' }),
+        ]),
+        layout,
+      ])
+    : layout;
   const treeHost = el('div', { class: 'config-tree-pane' });
   const detailHost = el('div', { class: 'config-detail-pane' });
   let selected = flat.run ? 'run' : null;
@@ -183,7 +190,7 @@ function configPanel(resolved) {
       },
     }),
   );
-  host.append(treeHost, detailHost);
+  layout.append(treeHost, detailHost);
   paint();
   return host;
 }
@@ -199,11 +206,26 @@ async function metricsPanel(path, keys) {
   let logY = getPref('run.logy', false);
 
   const charts = el('div', { class: 'chart-grid' });
+  const count = el('span', { class: 'filter-count' });
+  const box = filterBox({ prefKey: 'filter.run.metrics', onInput: render });
+  let series = {};
 
   async function draw() {
-    const { series } = await api.metrics(path, { max_points: 2000 });
+    ({ series } = await api.metrics(path, { max_points: 2000 }));
+    render();
+  }
+
+  // 絞り込み・軸の切り替えは取り直さず、手元の系列から描き直す。
+  function render() {
+    const names = Object.keys(series).sort();
+    const shown = rankByQuery(names, box.input.value);
+    count.textContent = countLabel(shown.length, names.length);
     clear(charts);
-    for (const name of Object.keys(series).sort()) {
+    if (!shown.length) {
+      charts.append(el('p', { class: 'empty-note' }, [icon('info', { size: 14 }), el('span', { text: '一致する名前がありません' })]));
+      return;
+    }
+    for (const name of shown) {
       const points = seriesPoints(series[name], xAxis);
       charts.append(
         lineChart({
@@ -219,13 +241,15 @@ async function metricsPanel(path, keys) {
 
   host.append(
     el('div', { class: 'chart-controls' }, [
+      box,
+      count,
       el('label', {}, [
         el('span', { text: 'x 軸' }),
         el('select', {
           onchange: (e) => {
             xAxis = e.target.value;
             setPref(xKey, xAxis);
-            draw();
+            render();
           },
         }, ['epoch', 'step', 'time'].map((v) => el('option', { value: v, selected: v === xAxis, text: v }))),
       ]),
@@ -236,7 +260,7 @@ async function metricsPanel(path, keys) {
           onchange: (e) => {
             logY = e.target.checked;
             setPref('run.logy', logY);
-            draw();
+            render();
           },
         }),
         el('span', { text: 'log y' }),
@@ -464,10 +488,7 @@ export async function runView(ctx, path) {
     const exit = exitPanel(detail.meta || {});
     if (exit) node.append(exit);
 
-    const summary = summaryPanel(detail);
-    if (summary) node.append(summary);
-
-    const metricsKeys = Object.keys((detail.resolved && {}) || {});
+    const summaryNames = Object.keys(detail.summary || {});
     const dataNames = Object.keys(detail.data || {}).filter((k) => k !== 'schema_version');
     node.append(
       tabs(
@@ -490,6 +511,13 @@ export async function runView(ctx, path) {
             label: '構成',
             icon: 'box',
             render: () => configPanel(detail.resolved),
+          },
+          {
+            id: 'summary',
+            label: 'summary',
+            icon: 'table',
+            count: summaryNames.length || null,
+            render: () => summaryPanel(detail.summary),
           },
           {
             id: 'metrics',

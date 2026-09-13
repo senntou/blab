@@ -3043,6 +3043,26 @@ tr.child-row td:first-child {
 .chart-controls label { display: inline-flex; align-items: center; gap: 6px; }
 .chart-controls select { padding: 3px 8px; font: inherit; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel); }
 .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; }
+.chart-controls { flex-wrap: wrap; }
+.chart-controls .search-box { flex: 1 1 260px; max-width: 460px; }
+
+/* --- 名前の絞り込み ----------------------------------------------------- */
+
+.filter-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.filter-bar .search-box { flex: 1 1 260px; max-width: 460px; }
+.search-box input { flex: 1; min-width: 0; }
+.filter-count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.summary-table td { font-family: var(--mono); }
+.provisional-note { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+
+.col-filter { position: sticky; top: -8px; z-index: 1; padding: 0 0 6px; margin-bottom: 4px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.col-filter .search-box { display: flex; }
+.col-filter .filter-count { display: block; margin-top: 4px; }
+
+table.experiments-table td.col-num,
+table.experiments-table th.col-num { text-align: right; }
+table.experiments-table .is-running { color: var(--running); font-weight: 600; }
+table.nodes tbody tr.row-link { cursor: pointer; }
 
 /* --- group / 逆引き ----------------------------------------------------- */
 

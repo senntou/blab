@@ -333,9 +333,10 @@ def list_logs(run_path: Path) -> list[dict]:
     root = Path(run_path) / "logs"
     if not root.is_dir():
         return []
+    # UI は先頭のログを既定表示するので stdout.log を先頭に置く
     return [
         {"name": p.name, "size": p.stat().st_size}
-        for p in sorted(root.iterdir())
+        for p in sorted(root.iterdir(), key=lambda p: (p.name != "stdout.log", p.name))
         if p.is_file()
     ]
 

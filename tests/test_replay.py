@@ -153,6 +153,15 @@ class TestReplay:
         with pytest.raises(BlabError, match="自己完結"):
             prepare(first.run.path)
 
+    def test_rejects_a_provisional_record(self, project):
+        """書き切る前に落ちた run の仮の記録は、引数が欠けているので再実行の入力にしない。"""
+        first = go(project)
+        path = first.run.path / "resolved.yaml"
+        doc = yaml.safe_load(path.read_text())
+        path.write_text(yaml.safe_dump({"provisional": True, **doc}))
+        with pytest.raises(BlabError, match="仮の記録"):
+            prepare(first.run.path)
+
     def test_detects_runtime_argument_drift(self, project):
         """記録を再生するのではなく、コードを動かして一致を確かめる。"""
         first = go(project)

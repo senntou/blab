@@ -25,7 +25,7 @@ from __future__ import annotations
 import weakref
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .errors import BlabError
 from .preflight import Prepared
@@ -119,8 +119,11 @@ class Recorder:
         *,
         overrides: dict[str, Any] | None = None,
         data: dict[str, Path] | None = None,
+        on_change: Callable[[], None] | None = None,
     ) -> None:
         self.overrides = overrides or {}
+        #: 新しい build を記録するたびに呼ぶ。実行中の仮の `resolved.yaml` を書き直すため。
+        self.on_change = on_change
         self.identity = _Identity()
         #: 解決済みの外部ファイル。記録では実パスではなく論理名で残す。
         self.data_names = {Path(v): k for k, v in (data or {}).items()}
@@ -147,8 +150,12 @@ class Recorder:
             args=self.encode_mapping(merged),
             args_from={k: sources[k] for k in sorted(sources)},
         )
+        before = len(node.builds)
         index = node.add(build)
         self.identity.remember(obj, ref_label(node.path, index))
+        # 同じ引数の build は 1 件に畳まれるので、記録が増えたときだけ知らせる。
+        if self.on_change is not None and len(node.builds) != before:
+            self.on_change()
 
     def source_of(self, node_path: str, name: str) -> str:
         """YAML 由来の引数が `--set` で上書きされたものかを見る。"""

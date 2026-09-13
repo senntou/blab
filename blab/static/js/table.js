@@ -4,6 +4,7 @@
 // group は折りたたみ行にし、集計（読むときに導出したもの）をその行に出す。
 
 import { api } from './api.js';
+import { countLabel, filterBox, nameMatcher, rankByQuery } from './filter.js';
 import { icon, statusDot } from './icons.js';
 import { getPref, setPref } from './prefs.js';
 import { el, clear, fmtDuration, fmtNumber, fmtRelative, isNumber } from './util.js';
@@ -115,7 +116,14 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table', onChanged = nul
 
   let sortKey = getPref(`${prefKey}.sort`, '_created');
   let sortDesc = getPref(`${prefKey}.desc`, true);
-  let filter = '';
+  // 入力は prefs に残す（実行中は 3 秒ごとに表ごと作り直されるので、手元の変数だと消える）。
+  const search = filterBox({
+    prefKey: `${prefKey}.filter`,
+    placeholder: '名前・値で絞り込む（文字を順に拾う。空白区切りで AND、-語 で除外）',
+    className: 'search',
+    onInput: () => draw(),
+  });
+  const filterText = () => search.input.value.trim();
   // group は既定で畳んでおく。開いたものだけ憶えるので、初めて開く group は必ず畳まれた状態から始まる。
   const expanded = new Set(getPref(`${prefKey}.expanded`, []));
   // 選択は比較・削除・移動の対象。ページをまたいで持ち回らない、この表だけのローカルな状態。
@@ -247,17 +255,14 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table', onChanged = nul
   }
 
   function matches(row) {
-    if (!filter) return true;
-    const needle = filter.toLowerCase();
-    if ((row.name || '').toLowerCase().includes(needle)) return true;
-    if (row.path.toLowerCase().includes(needle)) return true;
+    const query = filterText();
+    if (!query) return true;
+    const fields = [row.name || '', row.path];
     for (const key of visible) {
       const value = cellValue(row, key);
-      if (value !== undefined && value !== null && String(value).toLowerCase().includes(needle)) {
-        return true;
-      }
+      if (value !== undefined && value !== null) fields.push(String(value));
     }
-    return false;
+    return nameMatcher(query)(fields);
   }
 
   function toggleExpanded(path) {
@@ -325,29 +330,14 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table', onChanged = nul
     return tr;
   }
 
-  function draw() {
-    clear(controls);
-    clear(body);
-
+  // 操作欄は 1 度だけ作る。打つたびに作り直すと入力欄のフォーカスが外れ、列の一覧も閉じてしまう。
+  function drawControls() {
     actions = ctx ? el('div', { class: 'table-actions' }) : null;
-    controls.append(
-      ...[
-        el('label', { class: 'search' }, [
-          icon('search', { size: 14 }),
-          el('input', {
-            type: 'search',
-            placeholder: '名前・値で絞り込む',
-            value: filter,
-            oninput: (e) => {
-              filter = e.target.value;
-              draw();
-            },
-          }),
-        ]),
-        actions,
-        columnPicker(),
-      ].filter(Boolean),
-    );
+    controls.append(...[search, actions, columnPicker()].filter(Boolean));
+  }
+
+  function draw() {
+    clear(body);
     renderActions();
 
     const shown = columns.filter((c) => visible.has(c.key));
@@ -390,7 +380,7 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table', onChanged = nul
       tbody.append(renderRow(row, shown));
       count += 1;
       // 絞り込み中は、畳んだままだと一致した子が隠れて見つからなくなるので開く。
-      if (row.kind === 'group' && (expanded.has(row.path) || (filter && kids.length))) {
+      if (row.kind === 'group' && (expanded.has(row.path) || (filterText() && kids.length))) {
         const sortedKids = kids.sort((a, b) => {
           const d = compare(cellValue(a, sortKey), cellValue(b, sortKey));
           return sortDesc ? -d : d;
@@ -414,28 +404,42 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table', onChanged = nul
     const details = el('details', { class: 'col-picker' });
     details.append(el('summary', {}, [icon('columns', { size: 14 }), el('span', { text: '列' })]));
     const list = el('div', { class: 'col-list' });
-    for (const column of columns) {
-      list.append(
-        el('label', { class: `col-opt col-${column.kind}` }, [
-          el('input', {
-            type: 'checkbox',
-            checked: visible.has(column.key),
-            onchange: (e) => {
-              if (e.target.checked) visible.add(column.key);
-              else visible.delete(column.key);
-              setPref(`${prefKey}.columns`, [...visible]);
-              draw();
-            },
-          }),
-          el('span', { text: column.label }),
-          el('span', { class: 'col-kind', text: column.kind === 'config' ? '構成' : column.kind === 'summary' ? 'summary' : '' }),
-        ]),
-      );
+    const options = el('div');
+    const count = el('span', { class: 'filter-count' });
+    // 列は summary の数だけ増える（数百になりうる）ので、名前で絞れるようにする。
+    const box = filterBox({ placeholder: '列名で絞り込み', onInput: drawOptions });
+
+    function drawOptions() {
+      const shown = rankByQuery(columns, box.input.value, (c) => c.label);
+      count.textContent = countLabel(shown.length, columns.length);
+      clear(options);
+      for (const column of shown) {
+        options.append(
+          el('label', { class: `col-opt col-${column.kind}` }, [
+            el('input', {
+              type: 'checkbox',
+              checked: visible.has(column.key),
+              onchange: (e) => {
+                if (e.target.checked) visible.add(column.key);
+                else visible.delete(column.key);
+                setPref(`${prefKey}.columns`, [...visible]);
+                draw();
+              },
+            }),
+            el('span', { text: column.label }),
+            el('span', { class: 'col-kind', text: column.kind === 'config' ? '構成' : column.kind === 'summary' ? 'summary' : '' }),
+          ]),
+        );
+      }
     }
+
+    list.append(el('div', { class: 'col-filter' }, [box, count]), options);
+    drawOptions();
     details.append(list);
     return details;
   }
 
+  drawControls();
   draw();
   return wrap;
 }

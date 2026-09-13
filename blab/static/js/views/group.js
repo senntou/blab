@@ -2,6 +2,7 @@
 // **run の所属 group の付け替え**（UI が行う唯一の書き込み）。
 
 import { api } from '../api.js';
+import { filteredTable } from '../filter.js';
 import { icon } from '../icons.js';
 import { metricsOverlay } from '../overlay.js';
 import { nodeTable } from '../table.js';
@@ -13,31 +14,23 @@ function aggregateTable(detail) {
   if (!keys.length) {
     return el('p', { class: 'muted pad', text: 'finished な run の summary がまだありません' });
   }
-  const table = el('table', { class: 'args' });
-  table.append(
-    el('caption', {}, [
-      el('span', { text: '集計（配下の葉の run から、読むときに導出）' }),
-    ]),
-    el('thead', {}, [
-      el('tr', {}, ['metric', 'mean', 'std', 'min', 'max', 'n'].map((h) => el('th', { text: h }))),
-    ]),
-  );
-  const body = el('tbody');
-  for (const key of keys) {
-    const s = stats[key];
-    body.append(
-      el('tr', {}, [
+  return filteredTable({
+    keys,
+    head: ['metric', 'mean', 'std', 'min', 'max', 'n'],
+    caption: '集計（配下の葉の run から、読むときに導出）',
+    prefKey: 'filter.group.aggregate',
+    row: (key) => {
+      const s = stats[key];
+      return el('tr', {}, [
         el('th', { text: key }),
         el('td', { class: 'num' }, [el('strong', { text: fmtNumber(s.mean) })]),
         el('td', { class: 'num', text: s.std === null ? '-' : fmtNumber(s.std) }),
         el('td', { class: 'num', text: fmtNumber(s.min) }),
         el('td', { class: 'num', text: fmtNumber(s.max) }),
         el('td', { class: 'num', text: String(s.n) }),
-      ]),
-    );
-  }
-  table.append(body);
-  return table;
+      ]);
+    },
+  });
 }
 
 function movePanel(detail, reload, notify) {

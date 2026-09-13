@@ -6,6 +6,7 @@
 
 import { api } from '../api.js';
 import { flattenTree, renderValue, shortHash, versionLabel } from '../config-tree.js';
+import { filteredTable } from '../filter.js';
 import { icon } from '../icons.js';
 import { metricsOverlay } from '../overlay.js';
 import { diffBlock } from '../source.js';
@@ -169,32 +170,34 @@ function summaryTable(details) {
   const keys = [...new Set(details.flatMap((d) => Object.keys(d.summary || {})))].sort();
   if (!keys.length) return el('p', { class: 'muted pad', text: 'summary がありません' });
 
-  const table = el('table', { class: 'compare-table' });
-  const head = el('tr', {}, [el('th', { text: 'metric' })]);
-  details.forEach((d, i) => {
-    head.append(el('th', {}, [
+  const head = [
+    'metric',
+    ...details.map((d, i) => [
       el('span', { class: 'swatch', style: `background:${colorFor(i)}` }),
       el('span', { text: d.name || d.path.split('/').pop() }),
-    ]));
-  });
-  table.append(el('thead', {}, [head]));
+    ]),
+  ];
 
-  const body = el('tbody');
-  for (const key of keys) {
-    const values = details.map((d) => (d.summary || {})[key]);
-    const numbers = values.filter((v) => typeof v === 'number');
-    const best = numbers.length ? Math.max(...numbers) : null;
-    const row = el('tr', {}, [el('th', { text: key })]);
-    values.forEach((v) => {
-      row.append(
-        el('td', { class: v === best && numbers.length > 1 ? 'best' : '' }, [
-          v === undefined ? el('span', { class: 'muted', text: '-' }) : renderValue(v),
-        ]),
-      );
-    });
-    body.append(row);
-  }
-  table.append(body);
+  const table = filteredTable({
+    keys,
+    head,
+    className: 'compare-table',
+    prefKey: 'filter.compare.summary',
+    row: (key) => {
+      const values = details.map((d) => (d.summary || {})[key]);
+      const numbers = values.filter((v) => typeof v === 'number');
+      const best = numbers.length ? Math.max(...numbers) : null;
+      const row = el('tr', {}, [el('th', { text: key })]);
+      values.forEach((v) => {
+        row.append(
+          el('td', { class: v === best && numbers.length > 1 ? 'best' : '' }, [
+            v === undefined ? el('span', { class: 'muted', text: '-' }) : renderValue(v),
+          ]),
+        );
+      });
+      return row;
+    },
+  });
   return table;
 }
 

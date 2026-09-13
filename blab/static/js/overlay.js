@@ -2,6 +2,7 @@
 
 import { api } from './api.js';
 import { lineChart, seriesPoints } from './chart.js';
+import { countLabel, filterBox, rankByQuery } from './filter.js';
 import { icon } from './icons.js';
 import { getPref, setPref } from './prefs.js';
 import { el, clear, colorFor } from './util.js';
@@ -21,9 +22,10 @@ const PREF_KEY = 'overlay';
  */
 export function metricsOverlay(paths, labels) {
   const saved = getPref(PREF_KEY, {});
-  const opts = { xAxis: saved.xAxis || 'step', logY: !!saved.logY, filter: '' };
+  const opts = { xAxis: saved.xAxis || 'step', logY: !!saved.logY, filter: getPref('filter.overlay', '') };
   const node = el('section', { class: 'panel charts' });
   const grid = el('div', { class: 'chart-grid' });
+  const count = el('span', { class: 'filter-count' });
   let data = new Map(); // path -> metrics レスポンス
 
   const save = () => setPref(PREF_KEY, { xAxis: opts.xAxis, logY: opts.logY });
@@ -33,17 +35,14 @@ export function metricsOverlay(paths, labels) {
     el('h2', { text: 'metrics' }),
     el('span', { class: 'muted', text: `${paths.length} runs` }),
     el('span', { class: 'spacer' }),
-    el('span', { class: 'search-box' }, [
-      icon('search', { size: 13, class: 'search-icon' }),
-      el('input', {
-        type: 'search',
-        placeholder: 'キーで絞り込み',
-        oninput: (e) => {
-          opts.filter = e.target.value;
-          draw();
-        },
-      }),
-    ]),
+    filterBox({
+      prefKey: 'filter.overlay',
+      onInput: (value) => {
+        opts.filter = value;
+        draw();
+      },
+    }),
+    count,
     el('span', { class: 'segmented' }, X_AXES.map(([value, label]) =>
       el('button', {
         class: 'btn',
@@ -100,7 +99,8 @@ export function metricsOverlay(paths, labels) {
       if (!m) continue;
       for (const k of m.keys) if (!keys.includes(k)) keys.push(k);
     }
-    const shown = keys.filter((k) => k.includes(opts.filter)).sort();
+    const shown = rankByQuery(keys.sort(), opts.filter);
+    count.textContent = countLabel(shown.length, keys.length);
     if (!shown.length) {
       grid.append(el('p', { class: 'empty-note' }, [
         icon('info', { size: 14 }),

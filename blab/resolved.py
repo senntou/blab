@@ -71,12 +71,17 @@ def build_document(
     *,
     project_uid: str,
     source: str | None = None,
+    provisional: bool = False,
 ) -> dict:
-    """観測結果から `resolved.yaml` の中身を組み立てる。"""
-    doc: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION,
-        "experiment": experiment.experiment,
-    }
+    """観測結果から `resolved.yaml` の中身を組み立てる。
+
+    `provisional=True` は実行中の仮の記録。まだ呼ばれていない `.build()` の分は
+    `builds` が欠けているので、再実行の入力にはしない（`replay.prepare` が拒む）。
+    """
+    doc: dict[str, Any] = {"schema_version": SCHEMA_VERSION}
+    if provisional:
+        doc["provisional"] = True
+    doc["experiment"] = experiment.experiment
     if experiment.group:
         doc["group"] = experiment.group
     if experiment.name:

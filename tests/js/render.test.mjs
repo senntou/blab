@@ -165,4 +165,69 @@ function tokens(node) {
   console.log('table: ok');
 }
 
+// --- 名前の絞り込み（summary / metrics / 列が数百になるとき） -------------
+{
+  const { nameMatcher, filteredTable } = await import('../../blab/static/js/filter.js');
+  const names = ['test/accuracy', 'test/classwise/auc_DLBCL', 'train/classwise/auc_DLBCL', 'val/auc'];
+
+  assert.deepEqual(names.filter(nameMatcher('')), names, '空なら全部通す');
+  assert.deepEqual(
+    names.filter(nameMatcher('AUC dlbcl')),
+    ['test/classwise/auc_DLBCL', 'train/classwise/auc_DLBCL'],
+    '空白区切りは AND、大文字小文字は区別しない',
+  );
+  // auc は a-cc-u-ra-c-y と順に拾えるので test/accuracy にも一致する。
+  assert.deepEqual(names.filter(nameMatcher('auc -train')), ['test/accuracy', 'test/classwise/auc_DLBCL', 'val/auc'], '-語 は除外');
+  assert.deepEqual(names.filter(nameMatcher('  -  ')), names, '- だけの語は無視する');
+  assert.deepEqual(names.filter(nameMatcher('traiauc')), ['train/classwise/auc_DLBCL'], '連続していなくても文字の順に拾う');
+  assert.deepEqual(names.filter(nameMatcher('tac')).length, 3, '文字が順に出てくれば一致する');
+  assert.deepEqual(names.filter(nameMatcher('cat')), [], '順番が逆なら一致しない');
+  assert.deepEqual(names.filter(nameMatcher('cauq')), [], '無い文字があれば一致しない');
+  assert.deepEqual(
+    names.filter(nameMatcher('auc -tst')),
+    names,
+    '除外は連続した部分文字列だけ（散らばった文字では除かない）',
+  );
+  assert.ok(!nameMatcher('ab')(['xa', 'bx']), '欄をまたいで文字を拾わない');
+  assert.ok(nameMatcher('ab')(['xa', 'axb']), 'どれか 1 つの欄で一致すればよい');
+
+  // サブシーケンスはゆるいので、一致度の高い順に並べる。
+  const { rankByQuery } = await import('../../blab/static/js/filter.js');
+  const metricNames = ['lr', 'train/accuracy', 'train/balanced_accuracy', 'train/classwise/auc_CHL'];
+  assert.deepEqual(rankByQuery(metricNames, ''), metricNames, '語が無ければ元の順');
+  assert.equal(rankByQuery(metricNames, 'traiacc')[0], 'train/accuracy', '区切りの直後・連続の一致が上に来る');
+  assert.equal(rankByQuery(metricNames, 'lr')[0], 'lr', '散らばった一致より、ひと続きの一致が上');
+  assert.deepEqual(rankByQuery(['b/x', 'a/x'], 'x'), ['b/x', 'a/x'], '同点は元の順を保つ');
+
+  function findTag(node, tag) {
+    if (!node || node.nodeType !== 1) return null;
+    if (node.tagName === tag) return node;
+    for (const child of node.children) {
+      const hit = findTag(child, tag);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  const row = (k) => {
+    const tr = document.createElement('tr');
+    tr.textContent = k;
+    return tr;
+  };
+
+  const table = filteredTable({ keys: names, head: ['名前', '値'], prefKey: 'test.filter', row });
+  assert.ok(tokens(table).includes('4 件'), '件数が出る');
+  const input = findTag(table, 'INPUT');
+  input.value = 'val';
+  input.listeners.input[0]();
+  const text = tokens(table);
+  assert.ok(text.includes('val/auc') && !text.includes('test/accuracy'), '入力で行が絞られる');
+  assert.ok(text.includes('1 / 4 件'), '絞り込み後の件数が出る');
+
+  // 作り直されても（実行中の定期更新）、入力は残る。
+  const again = filteredTable({ keys: names, prefKey: 'test.filter', row });
+  assert.ok(tokens(again).includes('1 / 4 件'), '絞り込み文字列が prefs から復元される');
+
+  console.log('filter: ok');
+}
+
 console.log('\nすべて通りました');

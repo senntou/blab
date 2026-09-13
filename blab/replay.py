@@ -49,6 +49,11 @@ def prepare(run_path: Path) -> Replay:
     """run ディレクトリから、そのまま実行できる状態を組み立てる。"""
     run_path = Path(run_path).resolve()
     doc = load(run_path / RESOLVED_NAME)
+    if doc.get("provisional"):
+        raise BlabError(
+            f"{run_path / RESOLVED_NAME} は実行途中の仮の記録です（run が実行中か、"
+            "記録を書き切る前に強制終了されました）。引数が揃っていないので再実行できません"
+        )
     components = run_path / COMPONENTS_DIR
     if not components.is_dir():
         raise BlabError(

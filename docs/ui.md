@@ -19,16 +19,27 @@ ssh -L 8420:127.0.0.1:8420 gpu-server
 
 ## 画面
 
+### 名前の絞り込み
+
+summary・metrics・列など、数が多くなるものには絞り込み欄がある。
+
+- 語の文字がその順に出てくる名前が残る。連続していなくてよい（`traiacc` で `train/acc`）
+- 空白で区切った語は、すべてに一致する名前だけが残る（`test auc`）
+- 先頭に `-` を付けた語を**連続して**含む名前は除かれる（`test auc -classwise`）
+- 語を入れている間は、一致度の高い順に並ぶ（ひと続きの一致や、`/` `_` の直後での一致が上）。
+  run 一覧の行だけは、選んだ列のソート順のまま
+- 大文字小文字は区別しない。入力はブラウザに保存され、画面を開き直しても残る
+
 ### Experiments
 
-experiment ごとの run 数、実行中の run 数、最終更新日時。
+experiment ごとの run 数、実行中の run 数、最終更新日時の表。列でソートでき、名前で絞り込める。
 
 ### run 一覧
 
 experiment 内の run と group の表。
 
 - 列は `resolved.yaml` の構成（component の版と引数）と `summary.json` の値から作られる。
-  列の表示・非表示を選べる
+  列の表示・非表示を選べる（列の一覧も名前で絞り込める）
 - 列でソートでき、名前や値で絞り込める
 - group は折りたたみ行になり、配下の run の summary の mean ± std が表示される
 - チェックボックスで run を選び、次の操作ができる
@@ -41,7 +52,8 @@ experiment 内の run と group の表。
 | タブ | 内容 |
 | --- | --- |
 | YAML | `resolved.yaml` |
-| 構成 | 構成ツリー。各 component の版、引数とその由来（YAML / `--set` / 実行時 / デフォルト値）、README。同じ component が複数回 build された場合は build ごとに表示される |
+| 構成 | 構成ツリー。各 component の版、引数とその由来（YAML / `--set` / 実行時 / デフォルト値）、README。同じ component が複数回 build された場合は build ごとに表示される。実行中は仮の記録（まだ呼ばれていない build は出ない） |
+| summary | `summary.json` の値の表 |
 | metrics | `metrics.jsonl` のグラフ |
 | アーティファクト | `artifacts/` のファイル。画像・テキスト・CSV はその場で表示される |
 | ソース | run にコピーされた component のソース |
@@ -91,7 +103,8 @@ UI の「削除」はファイルを消さず、run を experiment 内の `_tras
 
 ## 表示の更新
 
-実行中の run があるときは、3 秒ごとに表示が更新される。`running` のまま 60 秒以上
+表示は自動では更新されない。最新の状態を見るには、トップバーの「更新」を押す（選択や絞り込みの入力など、
+ブラウザに保存していない操作途中の状態はリセットされる）。`running` のまま 60 秒以上
 heartbeat が更新されていない run は `stale` と表示される（プロセスが強制終了された場合など）。
 
 ## UI が書き込むもの

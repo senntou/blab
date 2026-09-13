@@ -1,4 +1,7 @@
-// ルーティングとポーリング。ライブ更新は running な run があるときだけ回す。
+// ルーティングと手動更新。
+//
+// 自動更新はしない。refresh はビューを丸ごと作り直すので、定期的に回すと選択・入力中の欄・
+// 開いたメニューが操作の途中で消える。最新にしたいときはトップバーの更新ボタンを押す。
 
 import { api } from './api.js';
 import { icon } from './icons.js';
@@ -12,13 +15,12 @@ import { compareView } from './views/compare.js';
 import { componentsView } from './views/components.js';
 import { componentView } from './views/component.js';
 
-const POLL_MS = 3000;
-
 const app = document.getElementById('app');
 const banner = document.getElementById('banner');
+const refreshBtn = document.getElementById('refresh-btn');
+const refreshTime = document.getElementById('refresh-time');
 
 let current = null;
-let timer = null;
 
 // 選択（比較・削除・移動の対象）は run 一覧の中だけで完結させる（table.js が持つ）。
 // ページをまたいで持ち回らない。比較へは選んだ時点で URL クエリに載せて渡す。
@@ -59,9 +61,14 @@ function syncNav(route) {
   }
 }
 
+function markUpdated() {
+  const now = new Date();
+  refreshTime.textContent = `最終更新 ${now.toLocaleTimeString()}`;
+  refreshTime.title = now.toLocaleString();
+}
+
 async function route() {
   const r = parseRoute();
-  clearInterval(timer);
   if (current && current.destroy) current.destroy();
   syncNav(r);
   app.setAttribute('aria-busy', 'true');
@@ -77,6 +84,7 @@ async function route() {
     clear(app);
     app.append(current.node);
     app.scrollTo(0, 0);
+    markUpdated();
   } catch (e) {
     current = null;
     clear(app);
@@ -90,17 +98,26 @@ async function route() {
   } finally {
     app.removeAttribute('aria-busy');
   }
-  timer = setInterval(tick, POLL_MS);
 }
 
-async function tick() {
-  if (!current || !current.live || !current.live()) return;
-  if (document.hidden) return;
+async function refresh() {
+  if (refreshBtn.disabled) return;
+  // 読み込みに失敗した画面には refresh がないので、ルートから開き直す。
+  if (!current) {
+    await route();
+    return;
+  }
+  refreshBtn.disabled = true;
+  const scrollTop = app.scrollTop;
   try {
     await current.refresh();
+    app.scrollTop = scrollTop;
     banner.hidden = true;
+    markUpdated();
   } catch (e) {
     showError(`更新に失敗しました: ${e.message}`);
+  } finally {
+    refreshBtn.disabled = false;
   }
 }
 
@@ -123,6 +140,8 @@ async function showRoot() {
 
 async function boot() {
   loadPrefs();
+  refreshBtn.append(icon('refresh', { size: 14 }), el('span', { text: '更新' }));
+  refreshBtn.addEventListener('click', refresh);
   showRoot();
   await route();
 }

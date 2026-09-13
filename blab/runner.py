@@ -85,10 +85,38 @@ def execute(
 
         warn(f"run の初期記録に失敗しました: {e!r}")
 
-    recorder = Recorder(
-        report.root, overrides=experiment.overrides, data=report.data
-    )
     source = _relative_source(project, experiment)
+    resolved_path = path / resolved_mod.RESOLVED_NAME
+
+    def record(*, provisional: bool) -> None:
+        resolved_mod.dump(
+            resolved_path,
+            resolved_mod.build_document(
+                experiment,
+                recorder,
+                project_uid=project.uid,
+                source=source,
+                provisional=provisional,
+            ),
+        )
+
+    def record_provisional() -> None:
+        # 実行中に構成を見られるようにするための仮の記録。書けなくても学習は止めない。
+        try:
+            record(provisional=True)
+        except Exception as e:  # noqa: BLE001
+            from .errors import warn
+
+            warn(f"仮の {resolved_mod.RESOLVED_NAME} を書けませんでした: {e!r}")
+
+    recorder = Recorder(
+        report.root,
+        overrides=experiment.overrides,
+        data=report.data,
+        on_change=record_provisional,
+    )
+    # 引数はまだ 1 つも観測していないが、構成（どの component のどの版か）はもう決まっている。
+    record_provisional()
 
     status = STATUS_FINISHED
     exit_info: dict | None = None
@@ -110,13 +138,8 @@ def execute(
                 "traceback": traceback.format_exc(),
             }
         finally:
-            # 例外で終わっても、それまでの観測は残す。
-            resolved_mod.dump(
-                path / resolved_mod.RESOLVED_NAME,
-                resolved_mod.build_document(
-                    experiment, recorder, project_uid=project.uid, source=source
-                ),
-            )
+            # 例外で終わっても、それまでの観測は残す。ここで仮の記録を確定版に置き換える。
+            record(provisional=False)
 
     unused = resolved_mod.unused_children(recorder.root)
     mismatches: list[str] = []
