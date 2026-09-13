@@ -102,7 +102,13 @@ export async function groupView(ctx, path) {
           { id: 'runs', label: 'run', icon: 'flask', count: runs.length,
             render: () => nodeTable(runs, { ctx, prefKey: `group.${path}` }) },
           { id: 'overlay', label: '重ね描き', icon: 'chart',
-            render: () => metricsOverlay(runs.filter((r) => r.kind === 'run').map((r) => r.path)) },
+            render: () => {
+              const runNodes = runs.filter((r) => r.kind === 'run');
+              const labels = new Map(runNodes.map((r) => [r.path, r.name || r.path.split('/').pop()]));
+              const overlay = metricsOverlay(runNodes.map((r) => r.path), labels);
+              overlay.refresh();
+              return overlay.node;
+            } },
           { id: 'move', label: '所属の変更', icon: 'move',
             render: () => movePanel(detail, load, ctx.notify) },
         ],

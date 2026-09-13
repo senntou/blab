@@ -165,6 +165,15 @@ def create_app(project: Project, runs_dir: Path | None = None) -> FastAPI:
         node = view.node(path)
         return _read_text(node.path / COMPONENTS_DIR, file)
 
+    @app.get("/api/nodes/{path:path}/experiment-source")
+    def api_experiment_source(path: str) -> dict:
+        """この run を生んだ experiments/*.yaml そのもの（宣言 = 何を書いたか）。"""
+        node = view.node(path)
+        rel = node.meta.get("source")
+        if not rel:
+            raise HTTPException(status_code=404, detail="元の yaml が記録されていません")
+        return _read_text(project.root, rel)
+
     @app.get("/api/nodes/{path:path}/log")
     def api_log(path: str, name: str, tail: int = Query(default=0, ge=0)) -> dict:
         node = view.node(path)

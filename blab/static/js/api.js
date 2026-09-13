@@ -29,8 +29,9 @@ export function encodePath(path) {
     .join('/');
 }
 
-export function fileUrl(path) {
-  return `/files/${encodePath(path)}`;
+export function fileUrl(runPath, artifactPath = null) {
+  const full = artifactPath ? `${runPath}/${artifactPath}` : runPath;
+  return `/files/${encodePath(full)}`;
 }
 
 function query(params) {
@@ -53,6 +54,7 @@ export const api = {
   detail: (path) => request(`/api/nodes/${encodePath(path)}/detail`),
   metrics: (path, params = {}) => request(`/api/nodes/${encodePath(path)}/metrics${query(params)}`),
   runSource: (path, file) => request(`/api/nodes/${encodePath(path)}/source${query({ file })}`),
+  experimentSource: (path) => request(`/api/nodes/${encodePath(path)}/experiment-source`),
   log: (path, name, tail = 0) => request(`/api/nodes/${encodePath(path)}/log${query({ name, tail })}`),
 
   components: (params = {}) => request(`/api/components${query(params)}`),

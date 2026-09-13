@@ -27,6 +27,14 @@ export function versionLabel(node) {
   return node.label ? `@${node.label}` : `@${shortHash(node.hash)}`;
 }
 
+/** バージョン表示の意味を説明する title。ハッシュはプロジェクトの区別ではなく、
+ * コードの中身から決まる版の識別子であることを誤解されがちなので明示する。 */
+export function versionTitle(node) {
+  return node.label
+    ? `ラベル: ${node.label}（コードの内容ハッシュ ${node.hash}）`
+    : `ラベルなし。コードの内容から決まるハッシュ（内容が変わると変わる）: ${node.hash}`;
+}
+
 function markerChip(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
   if ('$ref' in value) {
@@ -86,7 +94,7 @@ export function renderValue(value) {
   return el('span', {}, ['{', wrap, '}']);
 }
 
-function argsTable(args, argsFrom, { title = null } = {}) {
+export function argsTable(args, argsFrom, { title = null } = {}) {
   const names = Object.keys(args || {}).sort();
   if (!names.length) {
     return el('p', { class: 'muted tree-noargs', text: title ? `${title}: 引数なし` : '引数なし' });
@@ -116,78 +124,83 @@ function argsTable(args, argsFrom, { title = null } = {}) {
   return table;
 }
 
-function nodeHeader(name, node, { onSelect } = {}) {
-  const head = el('div', { class: 'tree-head' });
+/**
+ * ノード 1 つの見出し。**箱そのものを押すと右の詳細パネルが更新され（ページ遷移しない）**、
+ * 小さな `</>` ボタンだけがコード・README のページへ実際に飛ぶ（design 意図：ハイパー
+ * パラメータ確認とコード閲覧は別の重さの操作）。
+ */
+function nodeHeader(name, node, path, { onSelect } = {}) {
+  const head = el('div', {
+    class: 'tree-head',
+    onclick: () => onSelect && onSelect(path, node),
+  });
   head.append(
     el('span', { class: 'tree-slot', text: name }),
-    el('a', {
-      class: 'tree-component',
-      href: `#/component/${encodeURIComponent(node.use)}`,
-      title: `${node.use} の詳細へ`,
-      onclick: (e) => {
-        if (onSelect) {
-          e.preventDefault();
-          onSelect(node);
-        }
-      },
-    }, [
+    el('span', { class: 'tree-component' }, [
       icon('box', { size: 14 }),
       el('strong', { text: node.use }),
-      el('span', { class: 'tree-version', text: versionLabel(node) }),
+      el('span', { class: 'tree-version', title: versionTitle(node), text: versionLabel(node) }),
     ]),
   );
   if (node.entry) head.append(el('span', { class: 'tree-entry', text: node.entry }));
-  head.append(el('code', { class: 'tree-hash', text: shortHash(node.hash), title: node.hash }));
+  const builds = node.builds || [];
+  if (builds.length > 1) {
+    head.append(
+      el('span', { class: 'tree-multi', title: `${builds.length} 回 build された` }, [
+        el('span', { text: `×${builds.length}` }),
+      ]),
+    );
+  }
+  head.append(
+    el('a', {
+      class: 'tree-open',
+      href: `#/component/${encodeURIComponent(node.use)}`,
+      title: `${node.use} のコード・README へ`,
+      onclick: (e) => e.stopPropagation(),
+    }, [icon('code', { size: 13 })]),
+  );
   return head;
 }
 
-function renderNode(name, node, options) {
-  const box = el('section', { class: 'tree-node' });
-  box.append(nodeHeader(name, node, options));
+function renderNode(name, node, path, options) {
+  const box = el('section', { class: 'tree-node', dataset: { path } });
+  box.append(nodeHeader(name, node, path, options));
 
   const body = el('div', { class: 'tree-body' });
+  let hasBody = false;
 
-  if (node.args) {
-    // root は誰も .build() しない。blab が 1 度だけ実体化する。
-    body.append(argsTable(node.args, node.args_from));
-  } else {
-    const builds = node.builds || [];
-    if (!builds.length) {
-      // 宣言されたのに一度も build されなかった。**黙って消さない。**
-      body.append(
-        el('p', { class: 'tree-unused' }, [
-          icon('alert', { size: 14 }),
-          el('span', { text: '宣言されましたが、一度も build されませんでした' }),
-        ]),
-      );
-    } else {
-      builds.forEach((build, i) => {
-        body.append(
-          argsTable(build.args, build.args_from, {
-            title: builds.length > 1 ? `build #${i}` : null,
-          }),
-        );
-      });
-    }
+  if (!node.args && !(node.builds || []).length) {
+    // 宣言されたのに一度も build されなかった。**黙って消さない。**
+    body.append(
+      el('p', { class: 'tree-unused' }, [
+        icon('alert', { size: 14 }),
+        el('span', { text: '宣言されましたが、一度も build されませんでした' }),
+      ]),
+    );
+    hasBody = true;
   }
 
   const children = node.children || {};
   const names = Object.keys(children);
   if (names.length) {
     const kids = el('div', { class: 'tree-children' });
-    for (const key of names) kids.append(renderNode(key, children[key], options));
+    for (const key of names) {
+      kids.append(renderNode(key, children[key], path ? `${path}.${key}` : key, options));
+    }
     body.append(kids);
+    hasBody = true;
   }
 
-  box.append(body);
+  if (hasBody) box.append(body);
   return box;
 }
 
 /**
- * resolved.yaml を木として描く。
+ * resolved.yaml を木として描く。ハイパーパラメータそのものは表示しない
+ * （それは選んだ 1 component だけを見せる詳細パネルの役目 — run.js 側）。
  *
  * @param {object} resolved  resolved.yaml の中身
- * @param {object} opts      {onSelect} — component ノードを押したときの処理
+ * @param {object} opts      {onSelect(path, node)} — component の箱を押したときの処理
  */
 export function configTree(resolved, opts = {}) {
   const wrap = el('div', { class: 'config-tree' });
@@ -203,7 +216,7 @@ export function configTree(resolved, opts = {}) {
     }
     wrap.append(list);
   }
-  wrap.append(renderNode('run', resolved.run, opts));
+  wrap.append(renderNode('run', resolved.run, 'run', opts));
   return wrap;
 }
 

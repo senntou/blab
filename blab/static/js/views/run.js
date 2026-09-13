@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import { artifactBrowser } from '../artifacts.js';
 import { lineChart, seriesPoints } from '../chart.js';
-import { configTree, renderValue, shortHash } from '../config-tree.js';
+import { argsTable, configTree, flattenTree, renderValue, shortHash, versionLabel, versionTitle } from '../config-tree.js';
 import { icon, statusDot } from '../icons.js';
 import { getPref, setPref } from '../prefs.js';
 import { codeBlock, markdownBlock } from '../source.js';
@@ -42,7 +42,7 @@ function exitPanel(meta) {
   if (!meta.exit) return null;
   return el('section', { class: 'panel danger-panel' }, [
     el('h2', {}, [icon('alert', { size: 16 }), el('span', { text: `${meta.exit.type}: ${meta.exit.message}` })]),
-    meta.exit.traceback ? codeBlock(meta.exit.traceback, 'text') : null,
+    meta.exit.traceback ? codeBlock(meta.exit.traceback, { language: 'text' }) : null,
   ]);
 }
 
@@ -60,6 +60,111 @@ function summaryPanel(detail) {
     );
   }
   return list;
+}
+
+// component の README は version が変わらない限り同じ内容。タブを行き来しても
+// 何度も取りに行かないよう、run 詳細を開いている間だけ憶えておく。
+const componentInfoCache = new Map();
+
+function loadComponentInfo(id) {
+  if (!componentInfoCache.has(id)) {
+    componentInfoCache.set(id, api.component(id).catch(() => null));
+  }
+  return componentInfoCache.get(id);
+}
+
+/** 選んだ 1 component の詳細（説明 + ハイパーパラメータ）。構成ツリーの右側に出す。 */
+function configDetailPanel(nodePath, node) {
+  const host = el('div', { class: 'config-detail' });
+
+  host.append(
+    el('div', { class: 'detail-head' }, [
+      el('a', {
+        class: 'detail-title',
+        href: `#/component/${encodeURIComponent(node.use)}`,
+        title: `${node.use} のコード・README へ`,
+      }, [
+        icon('box', { size: 16 }),
+        el('strong', { text: node.use }),
+        el('span', { class: 'tree-version', title: versionTitle(node), text: versionLabel(node) }),
+      ]),
+    ]),
+    el('div', { class: 'detail-sub' }, [
+      el('code', { class: 'muted', text: nodePath }),
+      node.entry ? el('span', { class: 'tree-entry', text: node.entry }) : null,
+      el('code', { class: 'tree-hash', title: node.hash, text: shortHash(node.hash) }),
+    ]),
+  );
+
+  const desc = el('div', { class: 'detail-desc' }, [el('p', { class: 'muted', text: '説明を読み込み中…' })]);
+  host.append(desc);
+  loadComponentInfo(node.use).then((info) => {
+    clear(desc);
+    if (info && info.readme) {
+      desc.append(markdownBlock(info.readme));
+    } else {
+      desc.append(
+        el('p', { class: 'muted detail-no-readme' }, [
+          icon('info', { size: 13 }),
+          el('span', { text: `説明が保存されていません。components/${node.use}/README.md（か README.ja.md）を書くと、ここに出ます。` }),
+        ]),
+      );
+    }
+  });
+
+  const args = el('div', { class: 'detail-args' });
+  if (node.args) {
+    args.append(argsTable(node.args, node.args_from));
+  } else {
+    const builds = node.builds || [];
+    if (!builds.length) {
+      args.append(
+        el('p', { class: 'tree-unused' }, [
+          icon('alert', { size: 14 }),
+          el('span', { text: '宣言されましたが、一度も build されませんでした' }),
+        ]),
+      );
+    } else {
+      builds.forEach((build, i) => {
+        args.append(argsTable(build.args, build.args_from, { title: builds.length > 1 ? `build #${i}` : null }));
+      });
+    }
+  }
+  host.append(args);
+
+  return host;
+}
+
+/** 構成タブ本体。左に木、右に選んだ component の詳細（説明・ハイパーパラメータ）。 */
+function configPanel(resolved) {
+  const flat = flattenTree(resolved);
+  const host = el('div', { class: 'config-layout' });
+  const treeHost = el('div', { class: 'config-tree-pane' });
+  const detailHost = el('div', { class: 'config-detail-pane' });
+  let selected = flat.run ? 'run' : null;
+
+  function paint() {
+    for (const box of treeHost.querySelectorAll('[data-path]')) {
+      box.classList.toggle('is-selected', box.dataset.path === selected);
+    }
+    clear(detailHost);
+    const node = selected && flat[selected];
+    detailHost.append(
+      node ? configDetailPanel(selected, node) : el('p', { class: 'muted pad', text: 'component を選ぶと詳細が出ます' }),
+    );
+  }
+
+  treeHost.append(
+    configTree(resolved, {
+      onSelect: (path) => {
+        selected = path;
+        paint();
+      },
+    }),
+  );
+  host.append(treeHost, detailHost);
+  paint();
+  return host;
 }
 
 async function metricsPanel(path, keys) {
@@ -198,7 +303,7 @@ async function sourcePanel(path, components) {
     try {
       const doc = await api.runSource(path, file);
       const lang = file.endsWith('.md') ? 'md' : file.endsWith('.py') ? 'python' : 'text';
-      body.append(lang === 'md' ? markdownBlock(doc.text) : codeBlock(doc.text, lang));
+      body.append(lang === 'md' ? markdownBlock(doc.text) : codeBlock(doc.text, { language: lang }));
     } catch (e) {
       body.append(el('p', { class: 'muted', text: e.message }));
     }
@@ -218,6 +323,29 @@ async function sourcePanel(path, components) {
   return host;
 }
 
+async function yamlPanel(path, meta) {
+  const host = el('div', { class: 'source-panel' });
+  const source = meta.source;
+  if (!source) {
+    host.append(el('p', { class: 'muted pad', text: 'この run が生まれた yaml が記録されていません' }));
+    return host;
+  }
+  host.append(
+    el('p', { class: 'muted' }, [
+      icon('file', { size: 14 }),
+      el('span', { text: `この run を定義した宣言。` }),
+      el('code', { text: source }),
+    ]),
+  );
+  try {
+    const doc = await api.experimentSource(path);
+    host.append(codeBlock(doc.text, { language: 'yaml' }));
+  } catch (e) {
+    host.append(el('p', { class: 'muted', text: e.message }));
+  }
+  return host;
+}
+
 async function logsPanel(path, logs) {
   const host = el('div', { class: 'logs' });
   if (!logs.length) {
@@ -231,7 +359,7 @@ async function logsPanel(path, logs) {
   async function show(name) {
     clear(body);
     const doc = await api.log(path, name, 2000);
-    body.append(codeBlock(doc.text || '(空)', 'text'));
+    body.append(codeBlock(doc.text || '(空)', { language: 'text' }));
   }
 
   host.append(el('div', { class: 'source-head' }, [picker]), body);
@@ -271,7 +399,7 @@ export async function runView(ctx, path) {
         ]),
       ]),
       metaGrid(detail),
-      pathField(path, { label: 'run', iconName: 'folder' }),
+      pathField('run', path, 'folder'),
     );
 
     const exit = exitPanel(detail.meta || {});
@@ -285,10 +413,23 @@ export async function runView(ctx, path) {
       tabs(
         [
           {
+            id: 'yaml',
+            label: 'YAML',
+            icon: 'file',
+            render: () => {
+              const host = el('div');
+              yamlPanel(path, detail.meta || {}).then((panel) => {
+                clear(host);
+                host.append(panel);
+              });
+              return host;
+            },
+          },
+          {
             id: 'config',
             label: '構成',
             icon: 'box',
-            render: () => configTree(detail.resolved),
+            render: () => configPanel(detail.resolved),
           },
           {
             id: 'metrics',

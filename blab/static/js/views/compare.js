@@ -228,7 +228,16 @@ export async function compareView(ctx) {
       [
         { id: 'config', label: '構成の diff', icon: 'box', render: () => configDiff(details) },
         { id: 'source', label: 'コードの diff', icon: 'code', render: () => sourceDiff(details) },
-        { id: 'metrics', label: 'metrics', icon: 'chart', render: () => metricsOverlay(runPaths) },
+        {
+          id: 'metrics',
+          label: 'metrics',
+          icon: 'chart',
+          render: () => {
+            const overlay = metricsOverlay(runPaths, new Map(details.map((d) => [d.path, d.name || d.path.split('/').pop()])));
+            overlay.refresh();
+            return overlay.node;
+          },
+        },
         { id: 'summary', label: 'summary', icon: 'table', render: () => summaryTable(details) },
       ],
       { prefKey: 'compare.tab' },

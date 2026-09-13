@@ -275,6 +275,29 @@ def read_metrics(
     return {"series": series, "keys": sorted(series), "n_records": len(records)}
 
 
+_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico"}
+_TIFF_SUFFIXES = {".tif", ".tiff"}
+_TEXT_SUFFIXES = {".txt", ".log", ".md", ".yaml", ".yml", ".py", ".sh", ".cfg", ".ini", ".toml"}
+_CSV_SUFFIXES = {".csv", ".tsv"}
+_JSON_SUFFIXES = {".json", ".jsonl"}
+
+
+def artifact_type(name: str) -> str:
+    """拡張子からプレビュー方法を決める（内容は見ない。壊れた拡張子はそのまま「other」）。"""
+    suffix = Path(name).suffix.lower()
+    if suffix in _IMAGE_SUFFIXES:
+        return "image"
+    if suffix in _TIFF_SUFFIXES:
+        return "tiff"
+    if suffix in _JSON_SUFFIXES:
+        return "json"
+    if suffix in _CSV_SUFFIXES:
+        return "csv"
+    if suffix in _TEXT_SUFFIXES:
+        return "text"
+    return "other"
+
+
 def list_artifacts(run_path: Path) -> list[dict]:
     root = Path(run_path) / "artifacts"
     if not root.is_dir():
@@ -284,9 +307,12 @@ def list_artifacts(run_path: Path) -> list[dict]:
         if not path.is_file() or path.is_symlink():
             continue
         stat = path.stat()
+        name = path.relative_to(root).as_posix()
         out.append(
             {
-                "name": path.relative_to(root).as_posix(),
+                "name": name,
+                "path": f"artifacts/{name}",
+                "type": artifact_type(name),
                 "size": stat.st_size,
                 "mtime": stat.st_mtime,
             }

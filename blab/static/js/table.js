@@ -114,7 +114,8 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table' } = {}) {
   let sortKey = getPref(`${prefKey}.sort`, '_created');
   let sortDesc = getPref(`${prefKey}.desc`, true);
   let filter = '';
-  const collapsed = new Set(getPref(`${prefKey}.collapsed`, []));
+  // group は既定で畳んでおく。開いたものだけ憶えるので、初めて開く group は必ず畳まれた状態から始まる。
+  const expanded = new Set(getPref(`${prefKey}.expanded`, []));
 
   const controls = el('div', { class: 'table-controls' });
   const body = el('div', { class: 'table-body' });
@@ -148,8 +149,26 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table' } = {}) {
     return false;
   }
 
+  function toggleExpanded(path) {
+    if (expanded.has(path)) expanded.delete(path);
+    else expanded.add(path);
+    setPref(`${prefKey}.expanded`, [...expanded]);
+    draw();
+  }
+
   function renderRow(row, shown, { child = false } = {}) {
-    const tr = el('tr', { class: child ? 'child-row' : '' });
+    const isGroup = row.kind === 'group';
+    const tr = el('tr', {
+      class: [child ? 'child-row' : '', isGroup ? 'row-group' : ''].filter(Boolean).join(' '),
+      title: isGroup ? (expanded.has(row.path) ? 'クリックで畳む' : 'クリックで開く') : undefined,
+      // group 行はどこをクリックしても開閉する（リンクやチェックボックスは素通しする）。
+      onclick: isGroup
+        ? (e) => {
+            if (e.target.closest('a, input, button')) return;
+            toggleExpanded(row.path);
+          }
+        : undefined,
+    });
     if (ctx) {
       const selected = ctx.selection().includes(row.path);
       tr.append(
@@ -169,23 +188,29 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table' } = {}) {
       );
     }
     shown.forEach((column, i) => {
-      const cell = el('td', { class: column.kind === 'name' ? 'cell-first' : '' });
+      if (column.kind !== 'name') {
+        const cell = el('td', {});
+        cell.append(renderCell(row, column));
+        tr.append(cell);
+        return;
+      }
+      // 比較チェックボックス（ctx あり）が付くと本当の :first-child は pick 列になるので、
+      // 子行のインデントは「name 列」であることを明示したこのクラスで狙う（:first-child 不可）。
+      const cell = el('td', { class: 'col-name' });
+      // flex は中の div にだけ掛ける（td 自体を flex にすると行の高さが他の列とずれる）。
+      const wrap = el('div', { class: 'cell-first' });
       if (i === 0 && row.kind === 'group') {
-        cell.append(
+        wrap.append(
           el('button', {
             class: 'twisty',
             type: 'button',
-            title: collapsed.has(row.path) ? '開く' : '畳む',
-            onclick: () => {
-              if (collapsed.has(row.path)) collapsed.delete(row.path);
-              else collapsed.add(row.path);
-              setPref(`${prefKey}.collapsed`, [...collapsed]);
-              draw();
-            },
-          }, [icon(collapsed.has(row.path) ? 'chevron-right' : 'chevron-down', { size: 14 })]),
+            title: expanded.has(row.path) ? '畳む' : '開く',
+            onclick: () => toggleExpanded(row.path),
+          }, [icon('chevron-right', { size: 14, class: `twisty-icon${expanded.has(row.path) ? ' open' : ''}` })]),
         );
       }
-      cell.append(renderCell(row, column));
+      wrap.append(renderCell(row, column));
+      cell.append(wrap);
       tr.append(cell);
     });
     return tr;
@@ -250,7 +275,8 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table' } = {}) {
       if (!matches(row) && !kids.length) continue;
       tbody.append(renderRow(row, shown));
       count += 1;
-      if (row.kind === 'group' && !collapsed.has(row.path)) {
+      // 絞り込み中は、畳んだままだと一致した子が隠れて見つからなくなるので開く。
+      if (row.kind === 'group' && (expanded.has(row.path) || (filter && kids.length))) {
         const sortedKids = kids.sort((a, b) => {
           const d = compare(cellValue(a, sortKey), cellValue(b, sortKey));
           return sortDesc ? -d : d;

@@ -5,7 +5,7 @@ import { icon } from './icons.js';
 import { getPref, setPref } from './prefs.js';
 import { el, clear, colorFor, copyButton, fmtBytes, fmtTime } from './util.js';
 
-const TYPE_ICON = { image: 'image', csv: 'table', text: 'file', other: 'file' };
+const TYPE_ICON = { image: 'image', tiff: 'image', csv: 'table', json: 'file', text: 'file', other: 'file' };
 
 /** root からの絶対パスを組み立てる（root 取得は 1 回だけキャッシュされる）。 */
 async function absPath(...parts) {
@@ -42,13 +42,30 @@ export async function renderArtifact(container, runPath, artifact, { compact = f
     bodyNode.append(img);
     return;
   }
-  if (artifact.type === 'text' || artifact.type === 'csv') {
+  if (artifact.type === 'tiff') {
+    // TIFF は多くのブラウザが <img> で描けない。まず試して、失敗したらダウンロード誘導に切り替える。
+    const img = el('img', {
+      class: 'artifact-image',
+      src: url,
+      alt: artifact.name,
+      title: 'クリックで拡大',
+      onerror: () => {
+        clear(bodyNode);
+        bodyNode.append(placeholder('image', 'このブラウザは TIFF をプレビューできません。ダウンロードして開いてください。'));
+      },
+    });
+    img.addEventListener('click', () => lightbox(url, artifact.name));
+    bodyNode.append(img);
+    return;
+  }
+  if (artifact.type === 'text' || artifact.type === 'csv' || artifact.type === 'json') {
     bodyNode.append(el('p', { class: 'muted', text: '読み込み中…' }));
     try {
       const res = await fetch(url);
       const text = await res.text();
       clear(bodyNode);
       if (artifact.type === 'csv') bodyNode.append(csvTable(text));
+      else if (artifact.type === 'json') bodyNode.append(jsonView(text));
       else bodyNode.append(el('pre', { class: 'artifact-text', text: text.slice(0, 200_000) }));
     } catch (e) {
       clear(bodyNode);
@@ -57,6 +74,15 @@ export async function renderArtifact(container, runPath, artifact, { compact = f
     return;
   }
   bodyNode.append(placeholder('file', 'プレビューできない形式です'));
+}
+
+function jsonView(text) {
+  try {
+    const parsed = JSON.parse(text);
+    return el('pre', { class: 'artifact-text artifact-json', text: JSON.stringify(parsed, null, 2).slice(0, 200_000) });
+  } catch (e) {
+    return el('pre', { class: 'artifact-text', text: text.slice(0, 200_000) });
+  }
 }
 
 function placeholder(iconName, text) {

@@ -64,9 +64,13 @@ export function fmtTime(iso) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-export function fmtRelative(epochSec) {
-  if (!epochSec) return '—';
-  const diff = Date.now() / 1000 - epochSec;
+// created_at 等は ISO(オフセット付き) の文字列で来る（fmtTime と同じ入力）。
+// 秒の epoch 数値だと勘違いすると、Date 型の減算が NaN になり「NaN 日前」になる。
+export function fmtRelative(iso) {
+  if (!iso) return '—';
+  const ms = new Date(iso).getTime();
+  if (Number.isNaN(ms)) return String(iso);
+  const diff = Math.max(0, (Date.now() - ms) / 1000);
   if (diff < 60) return 'たった今';
   if (diff < 3600) return `${Math.floor(diff / 60)} 分前`;
   if (diff < 86400) return `${Math.floor(diff / 3600)} 時間前`;
@@ -190,7 +194,10 @@ export function tabs(items, { prefKey = null, active = null, onChange = null } =
     );
   }
   select(currentId, { save: false });
-  return { node, bar, select, current: () => currentId };
+  // `el(...)` を返す他のヘルパと同じく、呼び出し側は戻り値をそのまま append できる。
+  node.select = select;
+  node.current = () => currentId;
+  return node;
 }
 
 export function basename(path) {

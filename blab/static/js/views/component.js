@@ -47,7 +47,7 @@ function sourceTab(id, versions) {
     if (!file) return;
     try {
       const doc = await api.componentSource(id, file, hash);
-      body.append(file.endsWith('.md') ? markdownBlock(doc.text) : codeBlock(doc.text, file.endsWith('.py') ? 'python' : 'text'));
+      body.append(file.endsWith('.md') ? markdownBlock(doc.text) : codeBlock(doc.text, { language: file.endsWith('.py') ? 'python' : 'text' }));
     } catch (e) {
       body.append(el('p', { class: 'muted', text: e.message }));
     }

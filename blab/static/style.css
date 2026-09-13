@@ -3,18 +3,21 @@
 :root {
   color-scheme: light dark;
 
-  /* 面と線 */
-  --bg: #f4f6f9;
-  --bg-sunken: #eceff4;
+  /* 面と線。地は白。パネルは「カード」として浮かせない —
+     境界線（--border）だけで区切り、影や丸みで強調しない。 */
+  --bg: #ffffff;
+  --bg-sunken: #f1f3f6;
   --panel: #ffffff;
-  --panel-2: #f8fafc;
+  --panel-2: #f7f8fa;
   --border: #e2e6ec;
   --border-strong: #ccd3dd;
 
   /* 文字 */
   --text: #16202c;
   --text-2: #47535f;
-  --muted: #6d7987;
+  /* #6d7987 は白地でコントラスト比 4.4:1 しかなく、小さい見出し文字には読みにくかったので
+     5.8:1 まで濃くした。 */
+  --muted: #5a6673;
 
   /* アクセント */
   --accent: #2f6fed;
@@ -36,10 +39,14 @@
   --best-line: #9fdcb7;
   --diff: #fdf3e2;
 
-  --radius: 10px;
-  --radius-sm: 7px;
-  --radius-lg: 14px;
-  --shadow-1: 0 1px 2px rgb(16 32 52 / 6%), 0 1px 3px rgb(16 32 52 / 4%);
+  /* カード的な丸み・浮遊感を避けるため、地の面には角丸をほぼ付けない。
+     丸めるのはメニュー・ツールチップなど「浮いている」要素だけ（--shadow-2/3 側）。 */
+  --radius: 4px;
+  --radius-sm: 3px;
+  --radius-lg: 4px;
+  /* 地続きの面（panel/card/table 等）には影を付けない。浮くのは
+     ドロップダウン・ツールチップ・ライトボックスだけ（--shadow-2/3）。 */
+  --shadow-1: none;
   --shadow-2: 0 4px 12px rgb(16 32 52 / 10%);
   --shadow-3: 0 16px 40px rgb(16 32 52 / 18%);
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
@@ -77,7 +84,7 @@
     --best-line: #1f6743;
     --diff: #35291552;
 
-    --shadow-1: 0 1px 2px rgb(0 0 0 / 30%);
+    --shadow-1: none;
     --shadow-2: 0 6px 16px rgb(0 0 0 / 40%);
     --shadow-3: 0 20px 48px rgb(0 0 0 / 60%);
   }
@@ -85,6 +92,14 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* .banner や .selection-bar など `display: flex` を持つ要素は、その author
+   CSS が UA スタイルシートの `[hidden] { display: none }` に（詳細度が同じでも
+   author 優先で）勝ってしまい、`hidden` 属性を付けても常に表示され続ける。
+   ここで明示的に上書きして、`hidden` を最終的な決定権にする。 */
+[hidden] {
+  display: none !important;
 }
 
 html,
@@ -213,6 +228,9 @@ main {
   min-height: 0;
   overflow: auto;
   overflow-x: hidden;
+  /* group を開閉して縦の高さが変わるたびに縦スクロールバーが出たり消えたりして、
+     幅が変わって表が左右にガタつく。スクロールバー分の幅を常に確保して防ぐ。 */
+  scrollbar-gutter: stable;
   padding: 20px 22px 28px;
 }
 main[aria-busy='true'] {
@@ -728,10 +746,10 @@ input[type='checkbox'] {
   background: none;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  color: var(--muted);
+  color: var(--text-2);
   font: inherit;
   font-size: 13.5px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
   border-radius: var(--radius-sm) var(--radius-sm) 0 0;
@@ -829,14 +847,12 @@ input[type='checkbox'] {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-1);
   color: var(--text);
-  transition: border-color var(--speed), box-shadow var(--speed), transform var(--speed);
+  transition: border-color var(--speed), background var(--speed);
 }
 .card:hover {
   border-color: var(--accent-line);
-  box-shadow: var(--shadow-2);
-  transform: translateY(-1px);
+  background: var(--row-hover);
   text-decoration: none;
 }
 .card-head {
@@ -1268,19 +1284,6 @@ input.table-search {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-.twisty {
-  display: inline-flex;
-  align-items: center;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--muted);
-  padding: 0;
-  width: 16px;
-}
-.twisty:hover {
-  color: var(--accent);
 }
 .twisty-spacer {
   display: inline-block;
@@ -2198,35 +2201,6 @@ td.empty > div {
   font-size: 11.5px;
 }
 
-.file-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-.file-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel-2);
-  color: var(--text-2);
-  cursor: pointer;
-  font: inherit;
-  font-size: 11.5px;
-  font-family: var(--mono);
-}
-.file-item:hover {
-  border-color: var(--border-strong);
-}
-.file-item.on {
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
-  color: var(--accent);
-}
-
 .badge.dev {
   color: var(--stale);
   background: color-mix(in srgb, var(--stale) 14%, transparent);
@@ -2450,7 +2424,7 @@ code.block {
   border-radius: var(--radius);
 }
 .meta-grid > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.meta-grid dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.meta-grid dt { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .meta-grid dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
 
 /* --- 値のタイル --------------------------------------------------------- */
@@ -2500,22 +2474,32 @@ code.block {
   border-radius: var(--radius-sm);
 }
 
+/* ノードの箱は「押すと右の詳細パネルが変わる」ボタンとして振る舞う。
+   ハイパーパラメータは持たないので、葉ノードはほぼこの 1 行だけになり、
+   木全体が縦に伸びすぎず、構造そのものが見渡しやすくなる。 */
 .tree-node {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--panel);
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   overflow: hidden;
+  position: relative;
 }
 .tree-head {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 9px 13px;
+  padding: 8px 10px 8px 13px;
   background: var(--panel-2);
-  border-bottom: 1px solid var(--border);
+  cursor: pointer;
 }
+.tree-head:hover { background: var(--accent-soft); }
+.tree-node.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.tree-node.is-selected > .tree-head { background: var(--accent-soft); }
 .tree-slot {
   font-family: var(--mono);
   font-size: 12px;
@@ -2527,9 +2511,7 @@ code.block {
   align-items: center;
   gap: 5px;
   color: var(--text);
-  text-decoration: none;
 }
-.tree-component:hover { color: var(--accent); }
 .tree-version {
   font-family: var(--mono);
   font-size: 12px;
@@ -2543,28 +2525,120 @@ code.block {
   border: 1px solid var(--border);
   border-radius: 999px;
 }
+.tree-multi {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #1e4fb5;
+  background: var(--accent-soft);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
 .tree-hash { margin-left: auto; font-size: 11px; color: var(--muted); }
+.tree-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  text-decoration: none;
+  flex: 0 0 auto;
+}
+.tree-open:hover { background: var(--panel); color: var(--accent); }
 
-.tree-body { padding: 10px 13px; }
+.tree-body { padding: 10px 13px 2px; border-top: 1px solid var(--border); }
 .tree-noargs { margin: 0; font-size: 12px; }
+/* 縦の連結線 + 各子ノードへの小さな枝（org chart 風）。 */
 .tree-children {
-  margin-top: 10px;
-  padding-left: 14px;
+  margin-top: 2px;
+  padding-left: 18px;
   border-left: 2px solid var(--border);
 }
 .tree-children .tree-node:last-child { margin-bottom: 0; }
+.tree-children > .tree-node::before {
+  content: '';
+  position: absolute;
+  left: -18px;
+  top: 17px;
+  width: 16px;
+  height: 2px;
+  background: var(--border);
+}
 
 .tree-unused {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0;
+  margin: 0 0 10px;
   padding: 7px 10px;
   font-size: 12px;
   color: #8a5a12;
   background: var(--diff);
   border-radius: var(--radius-sm);
 }
+
+/* --- 構成タブ: 木 + 選んだ component の詳細パネル ------------------------ */
+
+.config-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .config-layout { grid-template-columns: 1fr; }
+  .config-detail-pane { order: -1; }
+}
+.config-detail-pane {
+  position: sticky;
+  top: 0;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 18px;
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+}
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.detail-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+  color: var(--text);
+  text-decoration: none;
+}
+.detail-title:hover { color: var(--accent); }
+.detail-title:hover strong { text-decoration: underline; }
+.detail-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.detail-desc {
+  margin: 14px 0;
+  padding: 14px 16px;
+  background: var(--bg-sunken);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+}
+.detail-desc .md > *:first-child { margin-top: 0; }
+.detail-desc .md > *:last-child { margin-bottom: 0; }
+.detail-no-readme {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.detail-args table.args { font-size: 13px; }
 
 /* --- 引数の表。出どころを色で区別する ----------------------------------- */
 
@@ -2696,7 +2770,7 @@ table.nodes thead th {
   position: sticky;
   top: 0;
   background: var(--panel-2);
-  font-weight: 500;
+  font-weight: 600;
   font-size: 12px;
   color: var(--text-2);
   cursor: pointer;
@@ -2708,23 +2782,53 @@ table.nodes thead th.col-config { color: var(--muted); }
 table.nodes tbody tr:hover { background: var(--row-hover); }
 table.nodes tbody tr:nth-child(even) { background: var(--zebra); }
 table.nodes tbody tr:nth-child(even):hover { background: var(--row-hover); }
-table.nodes td.pick, table.nodes th.pick { width: 1%; padding-right: 0; }
+/* width: 1% は table-layout:auto では「できるだけ狭く」ではなく「割合ヒント」でしかなく、
+   行が増減するたびに他列との配分が変わって実測幅がガタつく（実測: 32px→52px）。
+   チェックボックスは常に同じ見た目なので、割合ではなく固定 px 幅で確定させる。 */
+table.nodes td.pick, table.nodes th.pick { width: 34px; min-width: 34px; max-width: 34px; padding-right: 0; }
+/* `<td>` 自体を flex にすると、行の高さの決め方が他の（普通の table-cell の）
+   セルとずれて、name 列だけ縦位置が揃わなくなる。flex はこの中の div だけに掛ける。 */
 .cell-first { display: flex; align-items: center; gap: 4px; }
 .cell-name { display: inline-flex; align-items: center; gap: 5px; color: var(--text); text-decoration: none; font-weight: 500; }
 .cell-name:hover { color: var(--accent); }
-tr.child-row td:first-child { padding-left: 32px; }
+/* :first-child だと比較チェックボックス（pick 列）がある時にそちらへ誤爆して
+   run 名と重なっていたので、name 列であることを明示したクラスで狙う。 */
+tr.child-row td.col-name { padding-left: 32px; }
 tr.child-row .cell-name { font-weight: 400; }
+/* インデントの深さを group 行と揃えた分、テキストの字下げだけでは親子関係が
+   分かりにくくなった。box-shadow は列幅に影響しない（padding と違って表のガタつきを
+   起こさない）ので、左端の色帯で group とその子 run を縦につながって見せる。 */
+tr.child-row td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent-line);
+}
+
+.nodes tbody tr.row-group { background: var(--accent-soft); cursor: pointer; }
+.nodes tbody tr.row-group:hover { background: var(--accent-soft); filter: brightness(0.97); }
+.nodes tbody tr.row-group .cell-name { font-weight: 700; }
+.nodes tbody tr.row-group td { border-bottom-color: var(--border-strong); }
+.nodes tbody tr.row-group td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
 
 .twisty {
   display: inline-flex;
   align-items: center;
-  padding: 0;
+  justify-content: center;
+  /* 子 run 行のインデント（tr.child-row td.col-name の padding-left）と同じ幅にして、
+     group を開閉しても name 列の必要幅（ボタン分 vs インデント分）が変わらないようにする。
+     ここが揃っていないと、開閉のたびに表全体が左右にガタつく。 */
+  width: 32px;
+  height: 32px;
+  margin: -7px 0;
   border: none;
-  background: none;
-  color: var(--muted);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text-2);
   cursor: pointer;
 }
-.twisty:hover { color: var(--accent); }
+.twisty:hover { color: var(--accent); background: var(--accent-soft); }
+.twisty-icon { transition: transform 0.12s ease; }
+.twisty-icon.open { transform: rotate(90deg); }
 
 .status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
 .status-finished { color: var(--finished); }
@@ -2895,7 +2999,7 @@ table.compare-table td.best { background: var(--best); }
 
 .card-stats { display: flex; gap: 18px; margin: 10px 0 0; }
 .card-stats > div { display: flex; flex-direction: column; gap: 2px; }
-.card-stats dt { font-size: 11px; color: var(--muted); }
+.card-stats dt { font-size: 11px; font-weight: 600; color: var(--muted); }
 .card-stats dd { margin: 0; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .card-stats .is-running dd { color: var(--running); }
 
@@ -2907,6 +3011,7 @@ table.compare-table td.best { background: var(--best); }
   .chip-data { background: #10304a; border-color: #1d4c72; color: #a5d4f5; }
   .chip-label { background: #2c1f45; border-color: #45316b; color: #d2bcf7; }
   .tree-unused { background: #3d2f14; color: #f0cd8e; }
+  .tree-multi { background: #16305e; color: #a9c7ff; }
   .danger-panel { background: #2a1a1b; border-color: #6e3034; }
 }
 

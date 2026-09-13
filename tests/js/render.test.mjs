@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { flatten } from './dom-shim.mjs';
 
-const { configTree, flattenTree } = await import('../../blab/static/js/config-tree.js');
+const { argsTable, configTree, flattenTree } = await import('../../blab/static/js/config-tree.js');
 const { nodeTable } = await import('../../blab/static/js/table.js');
 
 const RESOLVED = {
@@ -49,7 +49,10 @@ function tokens(node) {
   return flatten(node).join(' ');
 }
 
-// --- 構成ツリー ---------------------------------------------------------
+// --- 構成ツリー -----------------------------------------------------------
+// ハイパーパラメータそのものは持たない。「どんな component が、どんな階層で
+// 使われているか」だけを見渡せる、押せる箱の並びであることを見る
+// （値と出どころは選んだ 1 component だけを見せる argsTable の役目 — run.js 側）。
 {
   const text = tokens(configTree(RESOLVED));
 
@@ -58,27 +61,41 @@ function tokens(node) {
   assert.ok(text.includes('@v1'), 'ラベルがあれば版はラベルで出る');
   assert.ok(text.includes('@415672ac'), 'ラベルが無ければ短いハッシュで出る');
 
-  // 引数の出どころを色（クラス）で区別する。
-  for (const origin of ['yaml', 'override', 'runtime', 'default']) {
-    assert.ok(text.includes(`.arg-${origin}`), `arg-${origin} の行がある`);
-    assert.ok(text.includes(`.origin.origin-${origin}`), `origin-${origin} のバッジがある`);
-  }
+  // 押して選ぶ箱であって、リンクとして直接 component ページには飛ばない。
+  assert.ok(text.includes('.tree-head'), '箱の見出しがある');
+  assert.ok(!text.includes('.arg-yaml') && !text.includes('.origin.origin-yaml'), 'ハイパラの値は木の中には出ない');
 
-  // 記録できなかったものを黙って省略しない。
-  assert.ok(text.includes('記録なし (Adam)'), '$unrecorded を出す');
-  assert.ok(text.includes('.chip.chip-ref'), '$ref を参照チップで出す');
-  assert.ok(text.includes('dataset#0'), '$ref の参照先を出す');
-
-  // 宣言されたのに build されなかった子。
+  // 宣言されたのに build されなかった子は、黙って消さない。
   assert.ok(text.includes('一度も build されませんでした'), '未使用の子を明示する');
 
   // --set の記録。
   assert.ok(text.includes('run.lr=0.0003'), 'overrides を出す');
 
-  // 同じ Builder から 2 回 build した dataset。
-  assert.ok(text.includes('build #0') && text.includes('build #1'), '複数 build を並べる');
+  // 同じ Builder から 2 回 build した dataset は、箱の上で分かる。
+  assert.ok(text.includes('×2'), '複数 build されたことを箱の上で示す');
 
   console.log('config-tree: ok');
+}
+
+// --- argsTable（選んだ component の詳細パネルが使う） ----------------------
+// 「引数は YAML 由来と実行時由来を色で区別する」「記録できなかったものを黙って
+// 省略しない」という約束は、値そのものを描く argsTable に移った。
+{
+  const rootText = tokens(argsTable(RESOLVED.run.args, RESOLVED.run.args_from));
+  for (const origin of ['yaml', 'override', 'default']) {
+    assert.ok(rootText.includes(`.arg-${origin}`), `arg-${origin} の行がある`);
+    assert.ok(rootText.includes(`.origin.origin-${origin}`), `origin-${origin} のバッジがある`);
+  }
+
+  const modelBuild = RESOLVED.run.children.model.builds[0];
+  const modelText = tokens(argsTable(modelBuild.args, modelBuild.args_from));
+  assert.ok(modelText.includes('.arg-runtime'), 'arg-runtime の行がある');
+  assert.ok(modelText.includes('.origin.origin-runtime'), 'origin-runtime のバッジがある');
+  assert.ok(modelText.includes('記録なし (Adam)'), '$unrecorded を出す');
+  assert.ok(modelText.includes('.chip.chip-ref'), '$ref を参照チップで出す');
+  assert.ok(modelText.includes('dataset#0'), '$ref の参照先を出す');
+
+  console.log('argsTable: ok');
 }
 
 // --- flattenTree（比較ビューが使う） -----------------------------------
@@ -115,14 +132,31 @@ function tokens(node) {
     },
   ];
 
-  const text = tokens(nodeTable(rows, { prefKey: 'test' }));
+  const table = nodeTable(rows, { prefKey: 'test-fold' });
+  let text = tokens(table);
 
   assert.ok(text.includes('baseline') && text.includes('cv5'), 'run と group が出る');
-  assert.ok(text.includes('fold0'), 'group 配下の run が折りたたみ行として出る');
+  assert.ok(!text.includes('fold0'), 'group は既定で畳まれている');
   assert.ok(text.includes('linear_classifier@v1'), '構成が列になる');
-  assert.ok(text.includes('.status.status-running'), '状態が出る');
   assert.ok(text.includes('2 runs'), 'group は run 数を出す');
   assert.ok(text.includes('± '), 'group の集計に ± が出る');
+
+  function find(node, className) {
+    if (!node) return null;
+    if (String(node.className || '').split(/\s+/).includes(className)) return node;
+    for (const child of node.children || []) {
+      const hit = find(child, className);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  const twisty = find(table, 'twisty');
+  assert.ok(twisty, '畳んだ group には開閉ボタンがある');
+  twisty.listeners.click[0]();
+  text = tokens(table);
+  assert.ok(text.includes('fold0'), '開くと group 配下の run が折りたたみ行として出る');
+  assert.ok(text.includes('.status.status-running'), '開いた子 run の状態が出る');
 
   console.log('table: ok');
 }

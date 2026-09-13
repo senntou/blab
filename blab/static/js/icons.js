@@ -52,6 +52,11 @@ const PATHS = {
   link: 'M10 13a4 4 0 0 0 5.7.3l3-3A4 4 0 0 0 13 4.7l-1.7 1.7M14 11a4 4 0 0 0-5.7-.3l-3 3A4 4 0 0 0 11 19.3l1.7-1.7',
   move: 'M5 9V6a1 1 0 0 1 1-1h3M19 15v3a1 1 0 0 1-1 1h-3M9 19H6a1 1 0 0 1-1-1v-3M15 5h3a1 1 0 0 1 1 1v3M9 12h6M12 9l3 3-3 3',
   'chevron-left': 'M15 5l-7 7 7 7',
+  // camelCase のキー（chevronDown/chevronRight）と呼び名がぶれている箇所があるため、
+  // kebab-case でも同じ矢印を引けるようにしておく（icon() は name をそのまま lookup するだけ）。
+  'chevron-right': 'M9 6l6 6-6 6',
+  'chevron-down': 'M6 9l6 6 6-6',
+  'chevron-up': 'M6 15l6-6 6 6',
 };
 
 /**
