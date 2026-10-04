@@ -30,7 +30,7 @@ USE_KEY = "use"
 DATA_KEY = "data"
 RAW_KEY = "$raw"
 
-TOP_LEVEL_KEYS = {"schema_version", "experiment", "group", "name", "run"}
+TOP_LEVEL_KEYS = {"schema_version", "experiment", "group", "name", "run", "comment"}
 
 ROOT_PATH = "run"
 
@@ -67,6 +67,7 @@ class Experiment:
     run: Node
     name: str | None = None
     group: str | None = None
+    comment: str | None = None
     source: Path | None = None
     overrides: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -354,7 +355,7 @@ def parse_document(doc: dict, source: Path | None = None) -> Experiment:
     if not isinstance(node, Node):  # pragma: no cover - 上の検査で弾かれている
         raise BlabError("run を component 参照として読めませんでした")
 
-    for key in ("name", "group"):
+    for key in ("name", "group", "comment"):
         if doc.get(key) is not None and not isinstance(doc[key], str):
             raise BlabError(f"{key} は文字列でなければなりません")
 
@@ -363,6 +364,7 @@ def parse_document(doc: dict, source: Path | None = None) -> Experiment:
         run=node,
         name=doc.get("name"),
         group=doc.get("group"),
+        comment=doc.get("comment"),
         source=Path(source) if source else None,
         warnings=warnings,
     )

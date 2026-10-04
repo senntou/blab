@@ -383,6 +383,8 @@ def _show_node(args, path: Path) -> None:
     for key in ("id", "name", "status", "created_at", "duration_sec", "source"):
         if node.meta.get(key) is not None:
             print(f"  {key:<13} {node.meta[key]}")
+    if node.meta.get("notes"):
+        print(f"\n  コメント\n{_indent(node.meta['notes'], 4)}")
     if node.meta.get("replay_of"):
         print(f"  replay_of     {node.meta['replay_of'].get('path')}")
     if node.meta.get("moved_from"):
@@ -538,6 +540,21 @@ def cmd_ui(args) -> None:
     )
 
 
+def cmd_note(args) -> None:
+    from .run import read_meta, set_notes
+
+    target = Path(args.target).resolve()
+    meta = read_meta(target)
+    if meta is None:
+        _fail(f"{target} はノードではありません（meta.json がない）")
+        return
+    if args.text is None:
+        print(meta.get("notes") or "(コメントはありません)")
+        return
+    set_notes(target, args.text)
+    print(f"[blab] コメントを更新しました: {target}")
+
+
 def cmd_rm(args) -> None:
     import shutil
 
@@ -638,6 +655,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--group", help="移動先の group（省略で experiment 直下へ戻す）")
     p.add_argument("--runs-dir")
     p.set_defaults(func=cmd_mv)
+
+    p = sub.add_parser("note", help="run / group / experiment のコメントを見る・書き換える")
+    p.add_argument("target", help="run / group / experiment のパス")
+    p.add_argument("text", nargs="?", help="省略すると現在のコメントを表示するだけ")
+    p.set_defaults(func=cmd_note)
 
     p = sub.add_parser("rm", help="run / group を削除する")
     p.add_argument("target")

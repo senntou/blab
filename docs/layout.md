@@ -169,6 +169,7 @@ schema_version: 2           # 省略時は 2
 experiment: cifar100        # 必須。Experiment ディレクトリ名になる
 group: cv5-lr3e4            # 任意。同名の run が同じ group に入る
 name: fold0                 # 任意。run ディレクトリ名の末尾になる
+comment: この実験が何を測っているか  # 任意。run の meta.json の notes の初期値（§5.1）。後から `blab note` で上書きできる
 
 run:                        # 必須。root component
   use: standard_trainer
@@ -286,7 +287,7 @@ Run は `{YYYYMMDD-HHMMSS}_{短ID}_{slug}`（名前が無ければ末尾を省�
   "heartbeat_at": "2026-09-13T15:41:03+09:00",
   "exit": null,                        // finished 以外のとき {"type": "...", "message": "...", "traceback": "..."}
   "tags": [],
-  "notes": "",
+  "notes": "",                         // YAML の comment があれば初期値として入る。`blab note` で後から書き換える
   "moved_from": null                   // blab mv で移された run にだけ入る（§6.3）
 }
 ```

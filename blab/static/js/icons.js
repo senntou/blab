@@ -11,6 +11,7 @@ const PATHS = {
   chart: 'M4 4v16h16M7 15l3.5-4.5 3 2.5L20 7',
   image: 'M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M15.5 8.5h.01',
   file: 'M6 3h7l5 5v13H6zM13 3v5h5',
+  note: 'M5 4h14v12l-4 4H5zM15 16v4M8 8h8M8 12h5',
   folder: 'M3 6h6l2 2h10v11H3z',
   copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
   check: 'M4 12.5 9 18 20 6',

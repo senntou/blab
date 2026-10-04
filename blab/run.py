@@ -188,6 +188,19 @@ def read_meta(path: Path) -> dict | None:
     return doc if isinstance(doc, dict) else None
 
 
+def set_notes(path: Path, notes: str) -> None:
+    """run / group / experiment の `notes` を書き換える（`blab note` の実体、layout.md §5.1）。
+
+    実行時に YAML の `comment` から入る初期値を、後から人間が上書きするための経路。
+    """
+    path = Path(path)
+    meta = read_meta(path)
+    if meta is None:
+        raise BlabError(f"{path} に {META_NAME} がありません（run / group / experiment ではない）")
+    meta["notes"] = str(notes)
+    write_json_atomic(path / META_NAME, meta, indent=2)
+
+
 def new_meta(
     kind: str,
     ulid: str,

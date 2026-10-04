@@ -7,6 +7,8 @@
 experiment: cifar100        # 必須。保存先の下のディレクトリ名になる
 group: cv5                  # 任意。同じ group 名の run が 1 つのディレクトリにまとまる
 name: distill               # 任意。run ディレクトリ名の末尾になる
+comment: |                  # 任意。run の meta.json の notes に初期値として入る。
+  precision の分母は...     # 「この実験の指標が何を意味するか」など。後から `blab note` で上書きできる
 
 run:                        # 必須。root component
   use: distill_trainer      # use を持つマッピングが component 参照

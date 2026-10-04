@@ -46,6 +46,7 @@
 | `blab ls [experiment] [--runs-dir DIR]` | run と group の一覧。group には summary の mean ± std を表示する |
 | `blab show <run / group のパス>` | meta、summary、`resolved.yaml`（group は集計） |
 | `blab mv <run のパス> [--group NAME] [--runs-dir DIR]` | 所属 group を変える。`--group` を省略すると experiment の直下に戻す |
+| `blab note <run / group / experiment のパス> [TEXT]` | コメント（`meta.json` の `notes`）を見る・書き換える。`TEXT` 省略で表示のみ。YAML の `comment` があれば run 作成時の初期値になる（[実験 YAML](experiments.md)） |
 | `blab rm <run / group のパス> [-y]` | ディレクトリを削除する。確認があり、元に戻せない |
 | `blab ui [--port 8420] [--host 127.0.0.1] [--open] [--runs-dir DIR]` | UI を起動する（[UI](ui.md)） |
 

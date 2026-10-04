@@ -272,6 +272,15 @@ async function metricsPanel(path, keys) {
   return host;
 }
 
+/** `meta.json` の notes（YAML の `comment` が初期値、`blab note` で後から書き換える）。表示専用。 */
+function commentPanel(meta) {
+  const notes = (meta && meta.notes) || '';
+  if (!notes.trim()) {
+    return el('p', { class: 'muted pad', text: 'コメントはありません（YAML の comment、または `blab note <run> "..."` で追加できます）' });
+  }
+  return el('div', { class: 'pad' }, [markdownBlock(notes)]);
+}
+
 function envPanel(env) {
   if (!env) return el('p', { class: 'muted pad', text: 'env.json がありません' });
   const wrap = el('div', { class: 'env' });
@@ -578,6 +587,12 @@ export async function runView(ctx, path) {
             label: '環境',
             icon: 'server',
             render: () => envPanel(detail.env),
+          },
+          {
+            id: 'comment',
+            label: 'コメント',
+            icon: 'note',
+            render: () => commentPanel(detail.meta),
           },
         ],
         { prefKey: 'run.tab' },

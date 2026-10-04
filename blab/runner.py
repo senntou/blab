@@ -170,6 +170,12 @@ def _create_run(
         ensure_container(parent, KIND_GROUP, experiment.group)
 
     path, ulid, created = create_run_dir(parent, experiment.name)
+    extra: dict = {}
+    if replay_of:
+        extra["replay_of"] = replay_of
+    if experiment.comment:
+        # YAML の comment を初期値にする。後から `blab note` で上書きできる（layout.md §5.1）。
+        extra["notes"] = experiment.comment
     meta = new_meta(
         KIND_RUN,
         ulid,
@@ -177,7 +183,7 @@ def _create_run(
         name=experiment.name,
         project_uid=project.uid,
         source=_relative_source(project, experiment),
-        extra={"replay_of": replay_of} if replay_of else None,
+        extra=extra or None,
     )
     run = Run(path, ulid, created, meta)
     run._write_meta()
