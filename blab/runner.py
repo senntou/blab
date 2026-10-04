@@ -187,6 +187,15 @@ def _create_run(
     )
     run = Run(path, ulid, created, meta)
     run._write_meta()
+    if experiment.docs:
+        from .docs import copy_sources
+
+        try:
+            copy_sources(experiment.docs, experiment.source, path)
+        except Exception as e:  # noqa: BLE001 - 事前検証は通っている。記録の失敗で学習を止めない
+            from .errors import warn
+
+            warn(f"docs をコピーできませんでした: {e!r}")
     return run, path
 
 

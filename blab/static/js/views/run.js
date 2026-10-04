@@ -4,6 +4,7 @@ import { api, fileUrl } from '../api.js';
 import { artifactBrowser } from '../artifacts.js';
 import { lineChart, seriesPoints } from '../chart.js';
 import { argsTable, configTree, flattenTree, renderValue, shortHash, versionLabel, versionTitle } from '../config-tree.js';
+import { docsMark, docsPanel } from '../docs.js';
 import { countLabel, filterBox, filteredTable, rankByQuery } from '../filter.js';
 import { icon, statusDot } from '../icons.js';
 import { getPref, setPref } from '../prefs.js';
@@ -272,15 +273,6 @@ async function metricsPanel(path, keys) {
   return host;
 }
 
-/** `meta.json` の notes（YAML の `comment` が初期値、`blab note` で後から書き換える）。表示専用。 */
-function commentPanel(meta) {
-  const notes = (meta && meta.notes) || '';
-  if (!notes.trim()) {
-    return el('p', { class: 'muted pad', text: 'コメントはありません（YAML の comment、または `blab note <run> "..."` で追加できます）' });
-  }
-  return el('div', { class: 'pad' }, [markdownBlock(notes)]);
-}
-
 function envPanel(env) {
   if (!env) return el('p', { class: 'muted pad', text: 'env.json がありません' });
   const wrap = el('div', { class: 'env' });
@@ -488,7 +480,7 @@ export async function runView(ctx, path) {
         el('a', { href: `#/e/${encodeURIComponent(experiment)}` }, [el('span', { text: experiment })]),
       ]),
       el('div', { class: 'page-head' }, [
-        el('h1', { text: detail.name || path.split('/').pop() }),
+        el('h1', {}, [el('span', { text: detail.name || path.split('/').pop() }), docsMark((detail.docs || []).map((d) => d.name))]),
       ]),
       metaGrid(detail),
       pathField('run', path, 'folder'),
@@ -502,6 +494,14 @@ export async function runView(ctx, path) {
     node.append(
       tabs(
         [
+          {
+            // 「何のための run か」を最初に読めるよう先頭に置く。notes（コメント）もここ。
+            id: 'docs',
+            label: 'ドキュメント',
+            icon: 'note',
+            count: (detail.docs || []).length || null,
+            render: () => docsPanel(path, detail.docs, { notes: (detail.meta || {}).notes, kind: 'run' }),
+          },
           {
             id: 'yaml',
             label: 'YAML',
@@ -587,12 +587,6 @@ export async function runView(ctx, path) {
             label: '環境',
             icon: 'server',
             render: () => envPanel(detail.env),
-          },
-          {
-            id: 'comment',
-            label: 'コメント',
-            icon: 'note',
-            render: () => commentPanel(detail.meta),
           },
         ],
         { prefKey: 'run.tab' },

@@ -170,6 +170,7 @@ experiment: cifar100        # 必須。Experiment ディレクトリ名になる
 group: cv5-lr3e4            # 任意。同名の run が同じ group に入る
 name: fold0                 # 任意。run ディレクトリ名の末尾になる
 comment: この実験が何を測っているか  # 任意。run の meta.json の notes の初期値（§5.1）。後から `blab note` で上書きできる
+docs: [cv5-lr3e4.md]        # 任意。run 直下にコピーするドキュメント（§5.7）。YAML のあるディレクトリからの相対パス
 
 run:                        # 必須。root component
   use: standard_trainer
@@ -227,6 +228,7 @@ YAML 読み込み → 参照解決 → ハッシュ → 凍結 → 凍結版か�
 6. YAML にもデフォルト値にも無い必須引数の一覧（実行時に渡される想定として記録する）
 7. `{data: NAME}` の論理名が解決でき、実パスが存在するか
 8. `blab.json` の `require_tags` を満たすか（構成の中に、要求されたタグを持つ component が 1 つ以上あるか）
+9. `docs:` のファイルがすべてあり、添付できる拡張子で、run の中で名前が重ならないか（§5.7）
 
 ## 4. 保存先のノード
 
@@ -237,8 +239,10 @@ Experiment / Group / Run はすべてディレクトリで、種別は直下の 
 <runs_dir>/
 └── cifar100/                               # Experiment（kind: experiment）
     ├── meta.json
+    ├── README.md                           # 任意。ドキュメント（§5.7）。どの階層にも置ける
     ├── 20260913-063012_a1b2_distill/       # Run（kind: run）
     │   ├── meta.json
+    │   ├── README.md                       # 任意。ドキュメント（§5.7）
     │   ├── resolved.yaml
     │   ├── env.json
     │   ├── data.json                       # {data: ...} を使った場合のみ
@@ -466,6 +470,44 @@ YAML の `{data: NAME}` は `blab.local.json` の `data` で実パスに解決�
 `partial` と `manifest` は中身の全バイトを比較していない。厳密な一致を確認したい場合は、
 そのファイルを直接ハッシュする。
 
+### 5.7 ドキュメント（`*.md`）
+
+**Experiment / Group / Run のディレクトリ直下にある `*.md` がドキュメント。** 「何のための実験か」
+「結果をどう読んだか」を Markdown で書いておく場所で、UI はそのまま描画する（数式を含む）。
+LLM に実験を回させる場合、意図と結論をここに書かせておくと、UI だけで確認が済む。
+
+```
+cifar100/
+├── meta.json
+├── README.md                    # experiment 全体の目的
+├── cv5-lr3e4/
+│   ├── meta.json
+│   ├── README.md                # この group（sweep / CV）の狙い
+│   └── 20260913-070001_e5f6_fold0/
+│       ├── meta.json
+│       ├── intent.md            # YAML の docs: からコピーされたもの
+│       ├── report.md            # run.log_doc() で書かれたもの
+│       └── artifacts/cm.png     # ![](artifacts/cm.png) で参照できる
+```
+
+- 直下の `*.md` だけが対象（サブディレクトリやドットで始まる名前は見ない）。`README.md` が先頭、残りは名前順
+- 画像（`.png` `.jpg` `.jpeg` `.gif` `.svg` `.webp`）も直下に置ける。Markdown の相対パスは
+  そのノードのディレクトリから解決する（run なら `artifacts/...` も参照できる）
+- 置き方は次のどれでもよく、置いた後の扱いは同じ
+
+| 置き方 | 対象 | 同名のファイル |
+| --- | --- | --- |
+| 実験 YAML の `docs:` | run（作成時にコピー） | — |
+| `blab doc add <node> <file>` | experiment / group / run | `-f` が無ければ拒む |
+| `run.log_doc(name, text)` | 実行中の run | 上書きする |
+| ファイルを直接置く | どれでも | — |
+
+- YAML の `docs:` は事前検証の対象で、ファイルが無い・名前が重なる場合は実行しない（§3.2）
+- **ドキュメントはハッシュや `resolved.yaml` に含まれない。** 構成の記録ではなく説明なので、
+  後から書き足しても run の同一性は変わらない。再実行（§7）でもコピーされない
+- `meta.json` の `notes`（§5.1）は 1 段落程度の短いメモ、`*.md` は長い説明、という使い分けを想定している。
+  UI では両方を同じ「ドキュメント」タブに出す
+
 ## 6. group のファイル
 
 ### 6.1 `meta.json`（group）
@@ -534,7 +576,8 @@ component はプロジェクトの `components/` ではなく、run の中のコ
 
 ## 9. UI の読み書き
 
-- ディレクトリを**読むだけ**。例外は run の group の付け替えで、`blab mv` と同じ処理を呼ぶ
+- ディレクトリを**読むだけ**。例外は run の group の付け替えで、`blab mv` と同じ処理を呼ぶ。
+  ドキュメント（§5.7）も読むだけで、UI から書く経路は無い
 - **`_trash` は予約された group 名。** UI の「削除」は run をこの group へ移す操作である。
   一覧 API は既定でこの配下を返さない（`include_trash=1` で含める）ので、通常の run 一覧と
   experiment の集計には出ない。ファイルは残るので、`_trash` から移し戻せば元に戻る
@@ -542,4 +585,7 @@ component はプロジェクトの `components/` ではなく、run の中のコ
 - `metrics.jsonl` は読み終えた位置を保持し、追記分だけ読む
 - component の逆引き（その component を使った run の一覧）は、`resolved.yaml` のハッシュから作る
 - `/files/{path}` はルート外へのパス（`..`、絶対パス、symlink 経由）を拒否する
+- ドキュメントの本文を返す API はノード直下の `*.md` しか読まない。Markdown 中の生の HTML は描画せず、
+  リンクは http(s) / mailto / 相対パスだけを辿らせる
+- 数式の描画には KaTeX を同梱している（`/vendor/katex/`）。外部 CDN には接続しない
 - `{"$unrecorded": ...}` や `{"$unavailable": ...}` など、記録できなかった値は省略せずに表示する

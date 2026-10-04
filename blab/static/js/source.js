@@ -1,4 +1,4 @@
-// ソース・diff・README の表示。
+// ソース・diff の表示（README などの Markdown は markdown.js）。
 //
 // blab の中心は「run から構成要素のコードと日本語の説明にワンクリックで辿れる」ことなので、
 // ここの読みやすさが機能そのものになる。外部ライブラリは使わず、DOM を直接組む
@@ -71,111 +71,8 @@ export function diffBlock(diff) {
   ]);
 }
 
-// ------------------------------------------------------------------ Markdown
-
-const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\[[^\]]+\]\([^)]+\))/g;
-
-function inlineNodes(text) {
-  const frag = document.createDocumentFragment();
-  let last = 0;
-  for (const m of String(text).matchAll(INLINE)) {
-    if (m.index > last) frag.append(document.createTextNode(text.slice(last, m.index)));
-    const token = m[0];
-    if (token.startsWith('`')) {
-      frag.append(el('code', { text: token.slice(1, -1) }));
-    } else if (token.startsWith('**')) {
-      frag.append(el('strong', { text: token.slice(2, -2) }));
-    } else {
-      const close = token.indexOf('](');
-      frag.append(el('a', {
-        href: token.slice(close + 2, -1),
-        text: token.slice(1, close),
-        target: '_blank',
-        rel: 'noreferrer',
-      }));
-    }
-    last = m.index + token.length;
-  }
-  if (last < text.length) frag.append(document.createTextNode(text.slice(last)));
-  return frag;
-}
-
-/**
- * README 用の最小 Markdown。見出し / 箇条書き / コードフェンス / 表 / 引用 / 段落。
- * 対応していない記法はそのまま素のテキストとして出す（勝手に消さない）。
- */
-export function markdownBlock(text) {
-  const wrap = el('div', { class: 'md' });
-  const lines = String(text ?? '').split('\n');
-  let i = 0;
-  let list = null;
-  const flushList = () => { list = null; };
-
-  while (i < lines.length) {
-    const line = lines[i];
-    const fence = line.match(/^```(\w*)\s*$/);
-    if (fence) {
-      flushList();
-      const buf = [];
-      i += 1;
-      while (i < lines.length && !/^```\s*$/.test(lines[i])) { buf.push(lines[i]); i += 1; }
-      i += 1;
-      wrap.append(codeBlock(buf.join('\n'), { language: fence[1] || 'python', copy: false }));
-      continue;
-    }
-    const heading = line.match(/^(#{1,4})\s+(.*)$/);
-    if (heading) {
-      flushList();
-      const tag = `h${Math.min(4, heading[1].length + 1)}`;
-      wrap.append(el(tag, {}, [inlineNodes(heading[2])]));
-      i += 1;
-      continue;
-    }
-    if (/^\s*[-*]\s+/.test(line)) {
-      if (!list) { list = el('ul'); wrap.append(list); }
-      list.append(el('li', {}, [inlineNodes(line.replace(/^\s*[-*]\s+/, ''))]));
-      i += 1;
-      continue;
-    }
-    if (/^\s*\d+\.\s+/.test(line)) {
-      if (!list || list.tagName !== 'OL') { list = el('ol'); wrap.append(list); }
-      list.append(el('li', {}, [inlineNodes(line.replace(/^\s*\d+\.\s+/, ''))]));
-      i += 1;
-      continue;
-    }
-    if (/^\s*>\s?/.test(line)) {
-      flushList();
-      wrap.append(el('blockquote', {}, [inlineNodes(line.replace(/^\s*>\s?/, ''))]));
-      i += 1;
-      continue;
-    }
-    if (line.trim().startsWith('|') && lines[i + 1] && /^\s*\|[-:\s|]+\|\s*$/.test(lines[i + 1])) {
-      flushList();
-      const cells = (row) => row.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
-      const header = cells(line);
-      i += 2;
-      const rows = [];
-      while (i < lines.length && lines[i].trim().startsWith('|')) { rows.push(cells(lines[i])); i += 1; }
-      wrap.append(el('table', { class: 'grid' }, [
-        el('thead', {}, [el('tr', {}, header.map((h) => el('th', {}, [inlineNodes(h)])))]),
-        el('tbody', {}, rows.map((r) => el('tr', {}, r.map((c) => el('td', {}, [inlineNodes(c)]))))),
-      ]));
-      continue;
-    }
-    if (!line.trim()) { flushList(); i += 1; continue; }
-
-    // 段落: 空行までを 1 つにまとめる
-    const buf = [line];
-    i += 1;
-    while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|```|\s*[-*]\s|\s*\d+\.\s|\s*>)/.test(lines[i])) {
-      buf.push(lines[i]);
-      i += 1;
-    }
-    flushList();
-    wrap.append(el('p', {}, [inlineNodes(buf.join('\n'))]));
-  }
-  return wrap;
-}
+// Markdown は markdown.js（ノードのドキュメントと共用）。既存の import 先を変えないよう再エクスポートする。
+export { markdownBlock } from './markdown.js';
 
 /** ファイル 1 件の見出し行（パスとハッシュ）。 */
 export function fileHeading(name, hash) {

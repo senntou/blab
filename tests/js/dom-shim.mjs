@@ -15,9 +15,12 @@ class Node {
   append(...kids) {
     for (const k of kids) {
       if (k === null || k === undefined || k === false) continue;
-      this.children.push(k);
+      // DocumentFragment は中身だけが移る（本物の DOM と同じ）。
+      if (k.isFragment) this.children.push(...k.children.splice(0));
+      else this.children.push(k);
     }
   }
+  get childNodes() { return this.children; }
   setAttribute(k, v) { this.attributes[k] = String(v); }
   getAttribute(k) { return this.attributes[k]; }
   addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
@@ -54,6 +57,7 @@ globalThis.document = {
   createElement: (tag) => new Node(tag),
   createElementNS: (_ns, tag) => new Node(tag),
   createTextNode: (t) => new TextNode(t),
+  createDocumentFragment: () => Object.assign(new Node('#fragment'), { isFragment: true }),
   getElementById: () => new Node('div'),
   querySelectorAll: () => [],
   addEventListener: () => {},

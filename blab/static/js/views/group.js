@@ -2,6 +2,7 @@
 // **run の所属 group の付け替え**（UI が行う唯一の書き込み）。
 
 import { api } from '../api.js';
+import { docsMark, docsPanel } from '../docs.js';
 import { filteredTable } from '../filter.js';
 import { icon } from '../icons.js';
 import { metricsOverlay } from '../overlay.js';
@@ -83,7 +84,7 @@ export async function groupView(ctx, path) {
         el('span', { class: 'sep', text: '/' }),
         el('a', { href: `#/e/${encodeURIComponent(experiment)}` }, [el('span', { text: experiment })]),
       ]),
-      el('h1', {}, [icon('layers', { size: 20 }), el('span', { text: detail.name || path.split('/').pop() })]),
+      el('h1', {}, [icon('layers', { size: 20 }), el('span', { text: detail.name || path.split('/').pop() }), docsMark((detail.docs || []).map((d) => d.name))]),
       el('p', { class: 'muted', text: `${detail.n_runs} 本の run` }),
       aggregateTable(detail),
     );
@@ -92,6 +93,8 @@ export async function groupView(ctx, path) {
     node.append(
       tabs(
         [
+          { id: 'docs', label: 'ドキュメント', icon: 'note', count: (detail.docs || []).length || null,
+            render: () => docsPanel(path, detail.docs, { notes: (detail.meta || {}).notes, kind: 'group' }) },
           { id: 'runs', label: 'run', icon: 'flask', count: runs.length,
             render: () => nodeTable(runs, { ctx, prefKey: `group.${path}`, onChanged: load }) },
           { id: 'overlay', label: '重ね描き', icon: 'chart',

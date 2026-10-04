@@ -110,6 +110,8 @@ run.log({"train/loss": 0.29}, step=1200)                  # step を指定して
 run.log_summary({"test/acc": 0.87})                       # run ごとの値 → summary.json
 run.log_artifact("outputs/confusion_matrix.png")          # ファイル / ディレクトリを artifacts/ にコピー
 run.log_artifact("outputs/cm.png", name="cm_final.png")   # 保存名を指定する
+run.log_doc("report.md", text)                            # Markdown を run 直下に置く → UI の「ドキュメント」タブ
+run.log_doc("fig.png", source="outputs/fig.png")          # ドキュメントから参照する画像
 run.path                                                  # run ディレクトリ（pathlib.Path）
 run.id                                                    # run の ULID
 ```
@@ -117,6 +119,8 @@ run.id                                                    # run の ULID
 - `log()` の `step` を省略すると、0 から順に自動で振られる
 - metric 名に `.` は使えない（警告のうえ `_` に置き換えられる）。区切りには `/` を使う
 - `log_summary()` を複数回呼ぶと、同じキーは後の値で上書きされる
+- `log_doc()` は同じ名前で呼ぶと上書きする。名前は `.md` か画像の拡張子で、`/` を含められない
+  （[ドキュメント](experiments.md#ドキュメント)）
 - 記録系のエラーは警告として出力され、学習は止まらない。環境変数 `BLAB_STRICT=1` で例外にできる
 
 stdout / stderr は `logs/stdout.log` / `logs/stderr.log` に自動で保存される（端末にも表示される）。

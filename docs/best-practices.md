@@ -172,6 +172,24 @@ blab run experiments/baseline.yaml --set run.epochs=1 --runs-dir /tmp/blab-smoke
 ラベルは version 管理ではなく、**人間が意味を認めた版の印**である。`blab run` のたびに版は
 自動で記録されるので、そのすべてに名前を付ける必要は無い。
 
+## ドキュメントと LLM
+
+実験の計画や実行を LLM に任せる場合、何を確かめるための実験で、結果をどう読んだかを
+ドキュメント（ノード直下の `*.md`）に書かせると、人間は UI だけで確認できる。
+
+| 置く場所 | 書く内容 | 置き方 |
+| --- | --- | --- |
+| experiment | 課題全体の目的、評価指標の定義（数式で書ける） | `blab doc add runs/<experiment> README.md` |
+| group | sweep / CV の狙い、振る値とその理由、まとめ | `blab doc add runs/<experiment>/<group> README.md` |
+| run | 仮説（実行前）と、結果の解釈（実行後） | YAML の `docs:`（実行前）、`run.log_doc()` か `blab doc add`（実行後） |
+
+- 実行前の意図は YAML の `docs:` で渡す。run 作成時のコピーとして残るので、後から書き換えても
+  「そのとき何を考えていたか」が失われない
+- 結論は数値の根拠を `summary` のキー名で書き、図は `artifacts/` に保存して `![](artifacts/x.png)` で参照させる
+- 1 行で済むメモは `comment:` / `blab note`（`meta.json` の `notes`）に入れる。ドキュメントタブの上に出る
+- ドキュメントは構成の記録ではない（ハッシュにも `resolved.yaml` にも入らない）。再現に要るものは
+  component の引数として YAML に書く
+
 ## run の整理
 
 - group を付け忘れた・間違えた run は `blab mv <run> --group <name>` で移す

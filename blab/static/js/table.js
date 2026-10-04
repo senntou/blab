@@ -4,6 +4,7 @@
 // group は折りたたみ行にし、集計（読むときに導出したもの）をその行に出す。
 
 import { api } from './api.js';
+import { docsMark } from './docs.js';
 import { countLabel, filterBox, nameMatcher, rankByQuery } from './filter.js';
 import { icon, statusDot } from './icons.js';
 import { getPref, setPref } from './prefs.js';
@@ -67,6 +68,7 @@ function renderCell(row, column) {
     return el('a', { class: 'cell-name', href }, [
       row.kind === 'group' ? icon('layers', { size: 14 }) : null,
       el('span', { text: String(value) }),
+      docsMark(row.docs),
     ]);
   }
   if (column.kind === 'status') {

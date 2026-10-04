@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from .. import __version__
 from .. import index as index_mod
 from ..components import Meta, hash_dir, iter_hashed_files, list_ids, short_hash
+from ..docs import DOC_SUFFIX, list_docs
 from ..errors import BlabError
 from ..io import read_json
 from ..project import Project
@@ -96,6 +97,7 @@ def create_app(project: Project, runs_dir: Path | None = None) -> FastAPI:
                 {
                     "path": index_mod.relpath(root, node.path),
                     "name": node.name,
+                    "docs": [d["name"] for d in list_docs(node.path)],
                     "n_runs": len(runs),
                     "n_running": sum(1 for r in runs if r.status in ("running", "stale")),
                     "updated_at": max(
@@ -132,6 +134,7 @@ def create_app(project: Project, runs_dir: Path | None = None) -> FastAPI:
         node = view.node(path)
         out = index_mod.row(node, root)
         out["meta"] = node.meta
+        out["docs"] = list_docs(node.path)
         if node.kind == KIND_RUN:
             resolved_path = node.path / RESOLVED_NAME
             out["resolved"] = (
@@ -176,6 +179,26 @@ def create_app(project: Project, runs_dir: Path | None = None) -> FastAPI:
         if not rel:
             raise HTTPException(status_code=404, detail="元の yaml が記録されていません")
         return _read_text(project.root, rel)
+
+    @app.get("/api/nodes/{path:path}/docs")
+    def api_docs(path: str) -> dict:
+        """ドキュメントの一覧と notes だけ（experiment ページ用。detail より軽い）。"""
+        node = view.node(path)
+        return {
+            "path": index_mod.relpath(root, node.path),
+            "kind": node.kind,
+            "name": node.name,
+            "notes": node.meta.get("notes") or "",
+            "docs": list_docs(node.path),
+        }
+
+    @app.get("/api/nodes/{path:path}/doc")
+    def api_doc(path: str, name: str) -> dict:
+        """ノード直下の Markdown（layout.md §5.7）。直下の `*.md` 以外は読ませない。"""
+        node = view.node(path)
+        if "/" in name or "\\" in name or not name.lower().endswith(DOC_SUFFIX):
+            raise HTTPException(status_code=400, detail=f"ドキュメントではありません: {name}")
+        return _read_text(node.path, name)
 
     @app.get("/api/nodes/{path:path}/log")
     def api_log(path: str, name: str, tail: int = Query(default=0, ge=0)) -> dict:

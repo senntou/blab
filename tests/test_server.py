@@ -226,6 +226,7 @@ class TestStatic:
             "/js/views/run.js", "/js/views/runs.js", "/js/views/group.js",
             "/js/views/compare.js", "/js/views/component.js",
             "/js/views/components.js", "/js/views/experiments.js",
+            "/js/markdown.js", "/js/docs.js",
             "/style.css",
         ],
     )

@@ -115,6 +115,25 @@ class Run:
             shutil.copy2(source, target)
         return target
 
+    @guard
+    def log_doc(self, name: str, text: str | None = None, *, source: Path | str | None = None) -> Path | None:
+        """Markdown を run 直下に置く（layout.md §5.7）。UI の「ドキュメント」タブに出る。
+
+        `run.log_doc("report.md", text)` か `run.log_doc("fig.png", source="out/fig.png")`。
+        同じ名前で呼ぶと上書きする。
+        """
+        from .docs import attach
+
+        if text is None and source is None:
+            raise BlabError("run.log_doc() には text か source を渡してください")
+        return attach(
+            self.path,
+            Path(source) if source is not None else None,
+            name=name,
+            text=text if source is None else None,
+            force=True,
+        )
+
     @property
     def summary(self) -> dict:
         return dict(self._summary)

@@ -150,6 +150,10 @@ done
 # 過去の run を、そのとき使ったコードで再実行する
 blab run runs/two-moons/20260913-063012_a1b2_baseline/
 
+# 実験の意図や結論を Markdown で添付する（UI の「ドキュメント」タブに出る）
+blab doc add runs/two-moons plan.md
+echo '# 結論 ...' | blab doc add runs/two-moons/20260913-063012_a1b2_baseline -
+
 # component の今の版にラベルを付け、版の差分を見る
 blab tag linear_classifier v1 --note "初版"
 blab diff linear_classifier@v1 linear_classifier
@@ -167,6 +171,7 @@ runs/two-moons/20260913-063012_a1b2_baseline/
 ├── metrics.jsonl    run.log() の値
 ├── summary.json     run.log_summary() の値
 ├── artifacts/       run.log_artifact() でコピーしたファイル
+├── *.md             ドキュメント（YAML の docs: / blab doc add / run.log_doc()）。UI で数式付きで描画される
 └── logs/            stdout.log / stderr.log
 ```
 
@@ -182,6 +187,8 @@ runs/two-moons/20260913-063012_a1b2_baseline/
 - component は内容のハッシュで版が区別される。編集して実行するだけで新しい版として記録され、
   登録の操作は要らない
 - UI で、run 同士の構成の差分と、版が違う component のソースの差分を見られる
+- experiment / group / run に Markdown のドキュメントを添付し、UI で数式ごと読める。
+  LLM に実験を回させるときに、意図と結論を書かせておけば UI だけで確認できる
 - 保存形式は JSON / JSONL / YAML のファイルだけで、データベースを使わない
 
 できないこと:
@@ -220,3 +227,5 @@ uv run pytest
 ## ライセンス
 
 [MIT](LICENSE)
+
+数式の描画のために [KaTeX](https://katex.org/) 0.16.22（MIT）を `blab/static/vendor/katex/` に同梱している（[LICENSE](blab/static/vendor/katex/LICENSE)）。

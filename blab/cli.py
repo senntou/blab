@@ -383,12 +383,19 @@ def _show_node(args, path: Path) -> None:
     for key in ("id", "name", "status", "created_at", "duration_sec", "source"):
         if node.meta.get(key) is not None:
             print(f"  {key:<13} {node.meta[key]}")
-    if node.meta.get("notes"):
-        print(f"\n  コメント\n{_indent(node.meta['notes'], 4)}")
     if node.meta.get("replay_of"):
         print(f"  replay_of     {node.meta['replay_of'].get('path')}")
     if node.meta.get("moved_from"):
         print(f"  moved_from    {node.meta['moved_from'].get('path')}")
+    if node.meta.get("notes"):
+        print(f"\n  コメント\n{_indent(node.meta['notes'], 4)}")
+    from .docs import list_docs
+
+    attached = list_docs(node.path)
+    if attached:
+        print(f"\n  ドキュメント（blab doc show {node.path} <名前>）")
+        for d in attached:
+            print(f"    {d['name']}")
 
     exit_info = node.meta.get("exit")
     if exit_info:
@@ -555,6 +562,62 @@ def cmd_note(args) -> None:
     print(f"[blab] コメントを更新しました: {target}")
 
 
+def _node_path(args, target: str) -> Path:
+    """パス、または ULID・短 ID・ディレクトリ名（`blab show` と同じ引き方）でノードを決める。"""
+    from .index import find
+    from .run import read_meta
+
+    path = Path(target)
+    if read_meta(path) is not None:
+        return path.resolve()
+    node = find(_runs_root(args, _project(args)), target)
+    if node is None:
+        _fail(f"{target} はノードではありません（meta.json がない / 見つからない）")
+    return node.path
+
+
+def cmd_doc(args) -> None:
+    from . import docs
+
+    node = _node_path(args, args.target)
+    if args.action == "ls":
+        found = docs.list_docs(node)
+        if not found:
+            print("(ドキュメントはありません)")
+        for d in found:
+            print(f"{d['name']:<32} {d['size']:>8} B")
+        return
+
+    if args.action == "show":
+        found = docs.list_docs(node)
+        name = args.files[0] if args.files else (found[0]["name"] if found else None)
+        if name is None:
+            _fail(f"{node} にドキュメントはありません")
+        print((node / docs.check_name(name)).read_text(encoding="utf-8"))
+        return
+
+    if args.action == "rm":
+        if not args.files:
+            _fail("消すドキュメントの名前を指定してください")
+        for name in args.files:
+            print(f"[blab] 削除しました: {docs.remove(node, name)}")
+        return
+
+    # add
+    if not args.files:
+        _fail("添付するファイル（標準入力なら -）を指定してください")
+    if args.name and len(args.files) > 1:
+        _fail("--as は 1 ファイルのときだけ使えます")
+    for entry in args.files:
+        if entry == "-":
+            target = docs.attach(
+                node, text=sys.stdin.read(), name=args.name or docs.README_NAME, force=args.force
+            )
+        else:
+            target = docs.attach(node, Path(entry), name=args.name, force=args.force)
+        print(f"[blab] 添付しました: {target}")
+
+
 def cmd_rm(args) -> None:
     import shutil
 
@@ -660,6 +723,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("target", help="run / group / experiment のパス")
     p.add_argument("text", nargs="?", help="省略すると現在のコメントを表示するだけ")
     p.set_defaults(func=cmd_note)
+
+    p = sub.add_parser(
+        "doc", help="run / group / experiment に Markdown を添付する・見る（UI で描画される）"
+    )
+    p.add_argument("action", choices=["add", "ls", "show", "rm"])
+    p.add_argument("target", help="run / group / experiment のパス（または ULID・短 ID）")
+    p.add_argument(
+        "files", nargs="*",
+        help="add: 添付するファイル（- で標準入力）/ show・rm: ドキュメント名",
+    )
+    p.add_argument("--as", dest="name", help="add: 添付先の名前（標準入力の既定は README.md）")
+    p.add_argument("-f", "--force", action="store_true", help="add: 同名のファイルを上書きする")
+    p.add_argument("--runs-dir")
+    p.set_defaults(func=cmd_doc)
 
     p = sub.add_parser("rm", help="run / group を削除する")
     p.add_argument("target")

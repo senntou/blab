@@ -55,6 +55,8 @@ export const api = {
   metrics: (path, params = {}) => request(`/api/nodes/${encodePath(path)}/metrics${query(params)}`),
   runSource: (path, file) => request(`/api/nodes/${encodePath(path)}/source${query({ file })}`),
   experimentSource: (path) => request(`/api/nodes/${encodePath(path)}/experiment-source`),
+  docs: (path) => request(`/api/nodes/${encodePath(path)}/docs`),
+  doc: (path, name) => request(`/api/nodes/${encodePath(path)}/doc${query({ name })}`),
   log: (path, name, tail = 0) => request(`/api/nodes/${encodePath(path)}/log${query({ name, tail })}`),
 
   components: (params = {}) => request(`/api/components${query(params)}`),

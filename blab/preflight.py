@@ -115,7 +115,16 @@ def preflight(
     report.root = _prepare(project, experiment.run, resolver, report, is_root=True)
     _check_data(project, experiment.run, report)
     _check_require_tags(project, report)
+    _check_docs(experiment, report)
     return report
+
+
+def _check_docs(experiment: Experiment, report: Report) -> None:
+    """YAML の `docs:` が全部あるか。無いまま走らせると、意図の説明が欠けた run が残る。"""
+    from .docs import check_sources
+
+    for problem in check_sources(experiment.docs, experiment.source):
+        report.error(problem)
 
 
 # ------------------------------------------------------------------ component

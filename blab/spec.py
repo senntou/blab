@@ -30,7 +30,7 @@ USE_KEY = "use"
 DATA_KEY = "data"
 RAW_KEY = "$raw"
 
-TOP_LEVEL_KEYS = {"schema_version", "experiment", "group", "name", "run", "comment"}
+TOP_LEVEL_KEYS = {"schema_version", "experiment", "group", "name", "run", "comment", "docs"}
 
 ROOT_PATH = "run"
 
@@ -68,6 +68,8 @@ class Experiment:
     name: str | None = None
     group: str | None = None
     comment: str | None = None
+    #: run 直下にコピーする Markdown / 画像（YAML からの相対パス。docs.py）。
+    docs: list[str] = field(default_factory=list)
     source: Path | None = None
     overrides: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -359,12 +361,21 @@ def parse_document(doc: dict, source: Path | None = None) -> Experiment:
         if doc.get(key) is not None and not isinstance(doc[key], str):
             raise BlabError(f"{key} は文字列でなければなりません")
 
+    docs = doc.get("docs")
+    if docs is None:
+        docs = []
+    elif isinstance(docs, str):
+        docs = [docs]
+    if not isinstance(docs, list) or not all(isinstance(d, str) for d in docs):
+        raise BlabError("docs はファイルパス（文字列）かそのリストでなければなりません")
+
     return Experiment(
         experiment=experiment,
         run=node,
         name=doc.get("name"),
         group=doc.get("group"),
         comment=doc.get("comment"),
+        docs=docs,
         source=Path(source) if source else None,
         warnings=warnings,
     )

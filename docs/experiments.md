@@ -9,6 +9,7 @@ group: cv5                  # 任意。同じ group 名の run が 1 つのデ�
 name: distill               # 任意。run ディレクトリ名の末尾になる
 comment: |                  # 任意。run の meta.json の notes に初期値として入る。
   precision の分母は...     # 「この実験の指標が何を意味するか」など。後から `blab note` で上書きできる
+docs: [distill.md]          # 任意。run にコピーするドキュメント（下記「ドキュメント」）
 
 run:                        # 必須。root component
   use: distill_trainer      # use を持つマッピングが component 参照
@@ -60,6 +61,7 @@ run:                        # 必須。root component
 5. YAML の引数名が entry の引数と合っているか（近い名前があれば候補を表示する）
 6. `{data: NAME}` の論理名が `blab.local.json` にあり、実パスが存在するか
 7. `blab.json` の `require_tags` を満たすか
+8. `docs:` のファイルがすべてあるか（下記「ドキュメント」）
 
 YAML にもデフォルト値にも無い必須引数は、エラーではなく「実行時に `.build()` で渡される想定」として扱われる。
 
@@ -112,6 +114,43 @@ blab run experiments/distill.yaml --set run.lr=1e-4 --set run.dataset.augment=no
 
 run は `<保存先>/<experiment>/[<group>/]<YYYYMMDD-HHMMSS>_<短い ID>_<name>/` に作られる
 （日時は UTC）。中身は [保存形式](layout.md#5-run-のファイル) を参照。
+
+## ドキュメント
+
+experiment / group / run のディレクトリ直下に置いた `*.md` は、UI の「ドキュメント」タブに描画される
+（見出し・表・コード・画像・`$...$` / `$$...$$` の数式など）。「この実験は何を確かめるためのものか」
+「結果をどう読んだか」を残しておく場所で、LLM に実験を回させる場合はここに意図と結論を書かせると、
+UI だけで確認できる。
+
+**run 作成時に添付する** — YAML の `docs:` に書いたファイルが run の直下にコピーされる。
+パスは YAML ファイルのあるディレクトリからの相対で、文字列 1 つでもリストでもよい。
+
+```yaml
+# experiments/distill.yaml
+experiment: cifar100
+docs: [distill.md, figures/teacher.png]    # experiments/distill.md などが run 直下にコピーされる
+run: ...
+```
+
+- ファイルが無い・拡張子が `.md` と画像以外・コピー先の名前が重なる場合は、事前検証でエラーになる
+- YAML の文書は実行時点のコピーとして残る。後から YAML 側を書き換えても、既存の run の文書は変わらない
+- 再実行（`blab run <run のパス>`）ではコピーされない
+
+**あとから添付する** — `blab doc`。experiment と group にはこちらで置く。
+
+```bash
+blab doc add runs/cifar100 plan.md                       # experiment に添付
+blab doc add runs/cifar100/cv5 README.md                 # group に添付
+blab doc add <run のパス> report.md --as README.md        # 名前を変えて添付
+blab doc add <run のパス> - --as result.md < result.md    # 標準入力から（LLM に書かせるとき）
+blab doc ls <run のパス>
+blab doc show <run のパス> result.md
+```
+
+**実行中に書く** — component から `run.log_doc("report.md", text)`（[記録 API](components.md#記録-api)）。
+
+`<node>` にはパスのほか、ULID・短 ID・run ディレクトリ名も使える。置き場所の仕様は
+[保存形式 §5.7](layout.md#57-ドキュメントmd)。
 
 ## group と CV
 

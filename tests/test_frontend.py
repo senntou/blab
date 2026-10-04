@@ -26,6 +26,15 @@ def test_render_modules():
 
 
 @pytest.mark.skipif(NODE is None, reason="node が無い")
+def test_markdown_rendering():
+    result = subprocess.run(
+        [NODE, str(Path(__file__).parent / "js" / "markdown.test.mjs")],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(NODE is None, reason="node が無い")
 @pytest.mark.parametrize(
     "path",
     sorted(

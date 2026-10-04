@@ -1,6 +1,7 @@
 // Experiment 一覧 — run 数 / 実行中の数 / 最終更新。数が増えても読めるよう行で並べる。
 
 import { api } from '../api.js';
+import { docsMark } from '../docs.js';
 import { countLabel, filterBox, rankByQuery } from '../filter.js';
 import { icon } from '../icons.js';
 import { getPref, setPref } from '../prefs.js';
@@ -25,6 +26,7 @@ function cell(e, column) {
     return el('a', { class: 'cell-name', href: `#/e/${encodeURIComponent(e.path)}` }, [
       icon('flask', { size: 14 }),
       el('span', { text: e.name }),
+      docsMark(e.docs),
     ]);
   }
   if (column.key === 'n_running') {

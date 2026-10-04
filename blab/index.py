@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .aggregate import Stat, aggregate
+from .docs import list_docs
 from .io import read_json
 from .run import (
     KIND_GROUP,
@@ -192,6 +193,7 @@ def row(node: Node, root: Path) -> dict:
         "duration_sec": node.meta.get("duration_sec"),
         "tags": node.meta.get("tags") or [],
         "notes": node.meta.get("notes") or "",
+        "docs": [d["name"] for d in list_docs(node.path)],
         "summary": node.summary,
         "config": {},
     }
