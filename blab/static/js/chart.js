@@ -209,6 +209,23 @@ export function lineChart({ title, series, xLabel = 'step', logY = false, legend
   return wrap;
 }
 
+/**
+ * x 軸の選択（'auto' | 'epoch' | 'step' | 'time'）を、描く系列に合わせて実際の軸に直す。
+ *
+ * 'auto' は、全系列で epoch がそろっていて（null なし）重複も無いときだけ epoch にし、
+ * それ以外は step にする。1 epoch の中で何度も log すると、epoch 軸では同じ x に
+ * 点が縦一列に重なって「全部 epoch 0」に見えるため。
+ */
+export function resolveXAxis(choice, seriesList) {
+  if (choice !== 'auto') return choice;
+  const epochUsable = seriesList.length > 0 && seriesList.every((s) => {
+    const epochs = s.epoch || [];
+    if (epochs.length !== s.value.length || epochs.some((e) => e === null || e === undefined)) return false;
+    return new Set(epochs).size === epochs.length;
+  });
+  return epochUsable ? 'epoch' : 'step';
+}
+
 /** metrics API の 1 系列を [[x, y], ...] に落とす。 */
 export function seriesPoints(series, xAxis = 'step') {
   const xs = series[xAxis] || series.step;

@@ -1,13 +1,14 @@
 // 複数 run の metrics 重ね描き（Group 詳細と比較ビューで共有）。
 
 import { api } from './api.js';
-import { lineChart, seriesPoints } from './chart.js';
+import { lineChart, resolveXAxis, seriesPoints } from './chart.js';
 import { countLabel, filterBox, rankByQuery } from './filter.js';
 import { icon } from './icons.js';
 import { getPref, setPref } from './prefs.js';
 import { el, clear, colorFor } from './util.js';
 
 const X_AXES = [
+  ['auto', 'auto'],
   ['step', 'step'],
   ['epoch', 'epoch'],
   ['time', '経過時間'],
@@ -22,7 +23,7 @@ const PREF_KEY = 'overlay';
  */
 export function metricsOverlay(paths, labels) {
   const saved = getPref(PREF_KEY, {});
-  const opts = { xAxis: saved.xAxis || 'step', logY: !!saved.logY, filter: getPref('filter.overlay', '') };
+  const opts = { xAxis: saved.xAxis || 'auto', logY: !!saved.logY, filter: getPref('filter.overlay', '') };
   const node = el('section', { class: 'panel charts' });
   const grid = el('div', { class: 'chart-grid' });
   const count = el('span', { class: 'filter-count' });
@@ -109,18 +110,20 @@ export function metricsOverlay(paths, labels) {
       return;
     }
     for (const key of shown) {
-      const series = [];
+      const raw = [];
       paths.forEach((p, i) => {
         const m = data.get(p);
         const s = m && m.series[key];
-        if (!s) return;
-        series.push({
-          label: labels.get(p) || p,
-          color: colorFor(i),
-          points: seriesPoints(s, opts.xAxis),
-        });
+        if (s) raw.push([p, i, s]);
       });
-      grid.append(lineChart({ title: key, xLabel: opts.xAxis, logY: opts.logY, series }));
+      // auto はキーごとに、重ねる全 run の系列で判定する（1 枚のグラフの中で軸を混ぜない）。
+      const axis = resolveXAxis(opts.xAxis, raw.map(([, , s]) => s));
+      const series = raw.map(([p, i, s]) => ({
+        label: labels.get(p) || p,
+        color: colorFor(i),
+        points: seriesPoints(s, axis),
+      }));
+      grid.append(lineChart({ title: key, xLabel: axis, logY: opts.logY, series }));
     }
   }
 

@@ -2,7 +2,7 @@
 
 import { api, fileUrl } from '../api.js';
 import { artifactBrowser } from '../artifacts.js';
-import { lineChart, seriesPoints } from '../chart.js';
+import { lineChart, resolveXAxis, seriesPoints } from '../chart.js';
 import { argsTable, configTree, flattenTree, renderValue, shortHash, versionLabel, versionTitle } from '../config-tree.js';
 import { docsMark, docsPanel } from '../docs.js';
 import { countLabel, filterBox, filteredTable, rankByQuery } from '../filter.js';
@@ -203,7 +203,7 @@ async function metricsPanel(path, keys) {
     return host;
   }
   const xKey = `run.x`;
-  let xAxis = getPref(xKey, 'epoch');
+  let xAxis = getPref(xKey, 'auto');
   let logY = getPref('run.logy', false);
 
   const charts = el('div', { class: 'chart-grid' });
@@ -227,12 +227,14 @@ async function metricsPanel(path, keys) {
       return;
     }
     for (const name of shown) {
-      const points = seriesPoints(series[name], xAxis);
+      // auto は系列ごとに判定する（step ごとの train と epoch ごとの val が混ざる run がある）。
+      const axis = resolveXAxis(xAxis, [series[name]]);
+      const points = seriesPoints(series[name], axis);
       charts.append(
         lineChart({
           title: name,
           series: [{ label: name, color: 'var(--accent)', points }],
-          xLabel: xAxis,
+          xLabel: axis,
           logY,
           legend: false,
         }),
@@ -252,7 +254,7 @@ async function metricsPanel(path, keys) {
             setPref(xKey, xAxis);
             render();
           },
-        }, ['epoch', 'step', 'time'].map((v) => el('option', { value: v, selected: v === xAxis, text: v }))),
+        }, ['auto', 'epoch', 'step', 'time'].map((v) => el('option', { value: v, selected: v === xAxis, text: v }))),
       ]),
       el('label', {}, [
         el('input', {

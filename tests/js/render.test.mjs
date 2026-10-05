@@ -230,4 +230,19 @@ function tokens(node) {
   console.log('filter: ok');
 }
 
+// x 軸の auto: epoch がそろって重複も無いときだけ epoch、それ以外は step。
+{
+  const { resolveXAxis } = await import('../../blab/static/js/chart.js');
+  const perEpoch = { step: [999, 1999], epoch: [0, 1], value: [1, 2] };
+  const perStep = { step: [0, 10, 20], epoch: [0, 0, 0], value: [1, 2, 3] };
+  const noEpoch = { step: [0, 1], epoch: [null, null], value: [1, 2] };
+  assert.equal(resolveXAxis('auto', [perEpoch]), 'epoch');
+  assert.equal(resolveXAxis('auto', [perStep]), 'step', '1 epoch 内に何点もあれば step');
+  assert.equal(resolveXAxis('auto', [noEpoch]), 'step', 'epoch が無ければ step');
+  assert.equal(resolveXAxis('auto', [perEpoch, perStep]), 'step', '重ね描きは 1 系列でも重複があれば step');
+  assert.equal(resolveXAxis('auto', []), 'step');
+  assert.equal(resolveXAxis('epoch', [perStep]), 'epoch', '明示的に選んだ軸は尊重する');
+  console.log('x axis: ok');
+}
+
 console.log('\nすべて通りました');
