@@ -107,12 +107,22 @@ body {
   height: 100%;
 }
 
+/* スマホのブラウザ（iOS Safari の text-size-adjust、Android Chrome の font boosting）は、
+   横に長いブロック — 特に Markdown の表のように折り返さない行 — の文字を勝手に拡大する。
+   その結果、表の中だけ字が大きくなっていた。サイズはこちらで決めているので自動調整は切る。 */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   /* ページ自身はスクロールしない。スクロールするのは main と表の中だけ。 */
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* スマホではアドレスバーの出入りで 100% と実際の見える高さがずれる。dvh で追従させる。 */
+  height: 100dvh;
   background: var(--bg);
   color: var(--text);
   font: 14px/1.55 var(--sans);
@@ -826,7 +836,7 @@ input[type='checkbox'] {
 
 .card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
   gap: 14px;
 }
 .card {
@@ -1471,7 +1481,7 @@ td.empty > div {
 
 .chart-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
   gap: 14px;
 }
 
@@ -1500,6 +1510,8 @@ td.empty > div {
   height: auto;
   display: block;
   overflow: visible;
+  /* 横なぞりはカーソル移動に使い、縦スワイプはページのスクロールに残す。 */
+  touch-action: pan-y;
 }
 .chart-svg .grid {
   stroke: var(--border);
@@ -1716,9 +1728,13 @@ td.empty > div {
 
 .compare-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
   gap: 12px;
 }
+.compare-grid[data-cols='1'] { grid-template-columns: minmax(0, 1fr); }
+.compare-grid[data-cols='2'] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.compare-grid[data-cols='3'] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.compare-grid[data-cols='4'] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .compare-cell {
   margin: 0;
   border: 1px solid var(--border);
@@ -3264,7 +3280,7 @@ tr.child-row td:first-child {
 .chart-controls { display: flex; gap: 16px; align-items: center; margin-bottom: 12px; font-size: 13px; }
 .chart-controls label { display: inline-flex; align-items: center; gap: 6px; }
 .chart-controls select { padding: 3px 8px; font: inherit; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel); }
-.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; }
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr)); gap: 14px; }
 .chart-controls { flex-wrap: wrap; }
 .chart-controls .search-box { flex: 1 1 260px; max-width: 460px; }
 
@@ -3369,3 +3385,226 @@ table.compare-table td.best { background: var(--best); }
 
 .metrics, .charts, .reverse, .series { display: block; }
 .v-list, .v-map { font-family: var(--mono); font-size: 12px; }
+
+/* ==========================================================================
+   狭い画面（タブレット縦 / スマホ）
+   ========================================================================== */
+
+/* タッチ端末では hover が無いので、hover で出すものは最初から出しておく。 */
+@media (hover: none) {
+  .code-actions { opacity: 1; }
+}
+
+/* iOS Safari は 16px 未満の入力欄にフォーカスすると画面を勝手に拡大し、戻らない。 */
+@media (pointer: coarse) {
+  input[type='search'],
+  input[type='number'],
+  input[type='text'],
+  select,
+  .select,
+  .search input,
+  .move-picker-body input,
+  .move-row input,
+  .move-row select {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 860px) {
+  main {
+    padding: 14px 14px 24px;
+    /* スマホではスクロールバーが重なって表示されるので、確保した溝が無駄な余白になるだけ。 */
+    scrollbar-gutter: auto;
+  }
+
+  /* --- アーティファクト: 一覧を上、プレビューを下に積む ------------------ */
+  .browser {
+    min-height: 0;
+  }
+  .browser-list {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    /* 一覧が画面を占領してプレビューが見えなくならないよう、高さを抑える。 */
+    max-height: 34vh;
+  }
+  .browser-view {
+    padding: 10px;
+    /* 選択後に scrollIntoView したとき、上端がぴったり貼り付かないように。 */
+    scroll-margin-top: 8px;
+  }
+  .viewer-head {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .viewer-name {
+    flex: 1 1 100%;
+    order: -1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .viewer-head .spacer {
+    display: none;
+  }
+  .artifact-image {
+    max-height: none;
+    margin: 0 auto;
+  }
+  .artifact-text {
+    max-height: 60vh;
+  }
+  .compare-grid[data-cols='3'],
+  .compare-grid[data-cols='4'] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lightbox {
+    padding: 12px 8px;
+  }
+  .lightbox-bar {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+  }
+  .lightbox img {
+    max-width: 100%;
+    max-height: 80dvh;
+  }
+
+  /* --- 構成タブ: 詳細を上に出すので sticky を外す（木を覆ってしまう） ----- */
+  .config-detail-pane {
+    position: static;
+    max-height: none;
+    padding: 14px;
+  }
+
+  .docs-body {
+    padding: 12px 14px 16px;
+  }
+
+  /* 固定幅で画面からはみ出していたもの */
+  .picker {
+    right: 8px;
+    width: min(320px, calc(100vw - 32px));
+  }
+  .move-picker-body {
+    flex-wrap: wrap;
+    max-width: calc(100vw - 32px);
+  }
+  .move-picker-body input,
+  .move-row input {
+    min-width: 0;
+    flex: 1 1 160px;
+  }
+  .col-list {
+    max-width: calc(100vw - 32px);
+  }
+  .arg,
+  .argv,
+  code.block {
+    max-width: 100%;
+  }
+  .binding {
+    margin-left: calc(var(--depth, 0) * 12px);
+  }
+  .binding-args,
+  .binding-refs {
+    padding-left: 0;
+  }
+  .tree-children {
+    padding-left: 12px;
+  }
+  .tree-children > .tree-node::before {
+    left: -12px;
+    width: 10px;
+  }
+}
+
+@media (max-width: 640px) {
+  /* --- トップバー: アイコン中心にして 1 行に収める ----------------------- */
+  .topbar {
+    gap: 8px;
+    padding: 0 10px;
+    height: 48px;
+  }
+  .brand span {
+    display: none;
+  }
+  .root-label {
+    padding: 2px 4px 2px 8px;
+  }
+  /* プロジェクト名だけ残し、長いパスは隠す（コピーボタンは残る）。 */
+  .root-label .root-text,
+  .root-label > svg:nth-of-type(2) {
+    display: none;
+  }
+  .root-label .project-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .topbar nav a {
+    padding: 8px;
+  }
+  .topbar nav a span,
+  #refresh-btn span,
+  #refresh-time {
+    display: none;
+  }
+  #refresh-btn {
+    padding: 7px 8px;
+  }
+
+  main {
+    padding: 12px 10px 20px;
+  }
+
+  .title-row h1 {
+    font-size: 18px;
+    overflow-wrap: anywhere;
+  }
+  .panel {
+    padding: 12px;
+  }
+  .panel.flush > .panel-head {
+    padding: 10px 12px;
+  }
+  .tab {
+    padding: 9px 10px;
+  }
+  .meta-grid {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    padding: 12px;
+  }
+  .summary-tiles,
+  .metric-cards {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+
+  input.table-search {
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 140px;
+  }
+  .chart-controls .search-box,
+  .filter-bar .search-box {
+    max-width: none;
+  }
+  .runs .cell-text {
+    max-width: 180px;
+  }
+  .runs .row-name {
+    max-width: 150px;
+  }
+
+  .compare-grid[data-cols='2'],
+  .compare-grid[data-cols='3'],
+  .compare-grid[data-cols='4'] {
+    gap: 8px;
+  }
+  .compare-cell {
+    padding: 6px;
+  }
+  .docs-body {
+    padding: 10px 12px 14px;
+  }
+}

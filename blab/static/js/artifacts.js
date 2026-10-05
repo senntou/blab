@@ -85,6 +85,11 @@ function jsonView(text) {
   }
 }
 
+/** 一覧とプレビューが縦に積まれる狭い画面では、選んだらプレビューまでスクロールする。 */
+function revealOnNarrow(node) {
+  if (window.matchMedia('(max-width: 860px)').matches) node.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
 function placeholder(iconName, text) {
   return el('div', { class: 'viewer-placeholder' }, [icon(iconName, { size: 26 }), el('p', { text })]);
 }
@@ -156,6 +161,7 @@ export function artifactBrowser(runPath, files, { baseDir = 'artifacts', emptyTe
             currentPath = f.path;
             drawList();
             renderArtifact(viewer, runPath, f);
+            revealOnNarrow(viewer);
           },
         }, [
           icon(TYPE_ICON[f.type] || 'file', { size: 15, class: `file-icon type-${f.type}` }),
@@ -223,6 +229,7 @@ export function artifactCompare(details, { prefKey = null } = {}) {
             save();
             drawList();
             drawView();
+            revealOnNarrow(viewNode);
           },
         }, [
           icon('image', { size: 15, class: 'file-icon' }),
@@ -259,10 +266,8 @@ export function artifactCompare(details, { prefKey = null } = {}) {
         )),
       ]),
     );
-    const grid = el('div', {
-      class: 'compare-grid',
-      style: cols ? `grid-template-columns: repeat(${cols}, minmax(0, 1fr))` : '',
-    });
+    // 列数は data-cols で CSS に渡す（狭い画面では CSS 側で 2 列までに抑える）。
+    const grid = el('div', { class: 'compare-grid', dataset: { cols: String(cols) } });
     details.forEach((d, i) => {
       const a = (d.artifacts || []).find((x) => x.name === current);
       const url = a ? fileUrl(d.path, a.path) : null;

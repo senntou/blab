@@ -7,6 +7,14 @@ const W = 720;
 const H = 260;
 const PAD = { top: 12, right: 12, bottom: 30, left: 56 };
 
+// タッチでは離しても値の表示を残すので、そのグラフの外を触ったときに消す。
+// グラフは描き直しのたびに作り直されるため、リスナーはグラフごとではなく 1 つだけ持つ。
+document.addEventListener('pointerdown', (evt) => {
+  for (const chart of document.querySelectorAll('.chart')) {
+    if (!chart.contains(evt.target)) chart.dispatchEvent(new Event('chart-hide'));
+  }
+});
+
 function svgEl(tag, attrs = {}) {
   const node = document.createElementNS(NS, tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -147,7 +155,9 @@ export function lineChart({ title, series, xLabel = 'step', logY = false, legend
     return xMin + ((vx - PAD.left) / (W - PAD.left - PAD.right)) * (xMax - xMin);
   };
 
-  svg.addEventListener('mousemove', (evt) => {
+  // pointer イベントにして、スマホでもタップ / 横なぞりで値を読めるようにする。
+  // 縦方向のスワイプはページのスクロールに残す（CSS の touch-action: pan-y）。
+  const onMove = (evt) => {
     const xv = toValue(evt);
     if (xv === null) return;
     while (dots.firstChild) dots.removeChild(dots.firstChild);
@@ -184,12 +194,20 @@ export function lineChart({ title, series, xLabel = 'step', logY = false, legend
     const left = Math.min(evt.clientX - box.left + 12, box.width - 180);
     tip.style.left = `${Math.max(0, left)}px`;
     tip.style.top = `${evt.clientY - box.top + 12}px`;
-  });
-  svg.addEventListener('mouseleave', () => {
+  };
+  svg.addEventListener('pointermove', onMove);
+  svg.addEventListener('pointerdown', onMove);
+  const hide = () => {
     cursor.setAttribute('opacity', 0);
     while (dots.firstChild) dots.removeChild(dots.firstChild);
     tip.hidden = true;
+  };
+  // タッチでは指を離した瞬間に pointerleave が来る。そこで消すと値が読めないので、
+  // マウス以外では残しておき、グラフの外を触ったとき（chart-hide）に消す。
+  svg.addEventListener('pointerleave', (evt) => {
+    if (evt.pointerType === 'mouse') hide();
   });
+  wrap.addEventListener('chart-hide', hide);
 
   wrap.append(svg, tip);
   if (legend && usable.length > 1) {
