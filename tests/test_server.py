@@ -7,7 +7,7 @@ import yaml
 
 from blab.runner import execute
 from blab.spec import parse_document
-from conftest import BASELINE
+from conftest import BASELINE, Scoped
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
@@ -22,7 +22,7 @@ def go(project, text: str = BASELINE):
 @pytest.fixture
 def client(project):
     go(project)
-    return TestClient(create_app(project))
+    return Scoped(TestClient(create_app(project)), project.uid)
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def rich(project):
     from blab.tag import tag
 
     tag(project, "resnet18", "v1", note="初版")
-    return TestClient(create_app(project))
+    return Scoped(TestClient(create_app(project)), project.uid)
 
 
 class TestStatus:
@@ -84,6 +84,21 @@ class TestRunDetail:
         assert doc["env"]["python"]
         assert {c["id"] for c in doc["components"]} == {"standard_trainer", "cifar100", "resnet18"}
         assert doc["logs"] == [] or all("name" in l for l in doc["logs"])
+
+    def test_baked_hash_is_the_recorded_one(self, client, project):
+        """run を開くたびに焼き込みのソースを読んでハッシュし直さない。"""
+        from blab.components import hash_dir
+
+        path = next(r["path"] for r in client.get("/api/nodes").json()["rows"] if r["kind"] == "run")
+        doc = client.get(f"/api/nodes/{path}/detail").json()
+        run_dir = project.runs_dir() / path
+        for component in doc["components"]:
+            assert component["hash"] == hash_dir(run_dir / "components" / component["id"])
+
+    def test_component_readme_alone(self, client, project):
+        (project.components_dir / "resnet18" / "README.md").write_text("# ResNet", encoding="utf-8")
+        assert client.get("/api/components/resnet18/readme").json()["readme"] == "# ResNet"
+        assert client.get("/api/components/cifar100/readme").json()["readme"] is None
 
     def test_metrics_are_columnar(self, client):
         path = next(r["path"] for r in client.get("/api/nodes").json()["rows"] if r["kind"] == "run")
@@ -210,6 +225,87 @@ class TestWrites:
 
 def test_files_endpoint_refuses_escape(client):
     assert client.get("/files/../../etc/passwd").status_code in (400, 404)
+    assert client.get("/files/%2e%2e/%2e%2e/etc/passwd").status_code in (400, 404)
+
+
+class TestProjects:
+    """UI から開けるのはグローバル索引に載ったプロジェクトと、起動したプロジェクトだけ。"""
+
+    @pytest.fixture
+    def other(self, tmp_path):
+        from conftest import DATASET, MODEL, TRAINER, LOOPS, write_component
+        from blab.project import init
+
+        proj, _ = init(tmp_path / "other", name="other")  # init が索引に登録する
+        write_component(proj, "standard_trainer", TRAINER, loops__py=LOOPS)
+        write_component(proj, "cifar100", DATASET)
+        write_component(proj, "resnet18", MODEL)
+        go(proj)
+        go(proj)
+        return proj
+
+    def test_lists_the_started_project_first_then_the_index(self, project, other):
+        doc = TestClient(create_app(project)).get("/api/projects").json()
+        assert doc["default"] == project.uid
+        uids = [p["uid"] for p in doc["projects"]]
+        assert uids[0] == project.uid
+        assert other.uid in uids and len(uids) == len(set(uids))
+        assert all(p["available"] for p in doc["projects"])
+
+    def test_opens_another_project_by_uid(self, project, other):
+        go(project)
+        client = TestClient(create_app(project))
+        mine = client.get(f"/api/p/{project.uid}/status").json()
+        theirs = client.get(f"/api/p/{other.uid}/status").json()
+        assert (mine["project"], mine["n_runs"]) == (project.name, 1)
+        assert (theirs["project"], theirs["n_runs"]) == ("other", 2)
+
+    def test_files_are_served_per_project(self, project, other):
+        client = TestClient(create_app(project))
+        run = next(
+            r["path"]
+            for r in client.get(f"/api/p/{other.uid}/nodes").json()["rows"]
+            if r["kind"] == "run"
+        )
+        assert client.get(f"/files/{other.uid}/{run}/meta.json").status_code == 200
+        assert client.get(f"/files/{project.uid}/{run}/meta.json").status_code == 404
+
+    def test_unknown_uid_is_404(self, project):
+        client = TestClient(create_app(project))
+        assert client.get("/api/p/nope/status").status_code == 404
+        assert client.get("/files/nope/x").status_code == 404
+
+    def test_vanished_project_is_listed_but_not_opened(self, project, other):
+        import shutil
+
+        shutil.rmtree(other.root)
+        client = TestClient(create_app(project))
+        entry = next(
+            p for p in client.get("/api/projects").json()["projects"] if p["uid"] == other.uid
+        )
+        assert entry["available"] is False
+        assert client.get(f"/api/p/{other.uid}/status").status_code == 404
+
+    def test_stale_index_pointing_at_a_different_project_is_refused(self, project, other):
+        from blab.project import GlobalIndex
+
+        GlobalIndex.load().register("someone-else", "ghost", other.root)
+        client = TestClient(create_app(project))
+        assert client.get("/api/p/someone-else/status").status_code == 404
+
+    def test_runs_dir_override_only_applies_to_the_started_project(self, project, other, tmp_path):
+        logs = tmp_path / "elsewhere"
+        logs.mkdir()
+        client = TestClient(create_app(project, runs_dir=logs))
+        assert client.get(f"/api/p/{project.uid}/status").json()["runs_dir"] == str(logs)
+        assert client.get(f"/api/p/{other.uid}/status").json()["runs_dir"] == str(other.runs_dir())
+
+    def test_starts_without_a_project(self, other):
+        client = TestClient(create_app(None))
+        doc = client.get("/api/projects").json()
+        assert doc["default"] is None
+        assert [p["uid"] for p in doc["projects"]] == [other.uid]
+        assert client.get(f"/api/p/{other.uid}/status").json()["n_runs"] == 2
 
 
 class TestStatic:
@@ -226,9 +322,33 @@ class TestStatic:
             "/js/views/run.js", "/js/views/runs.js", "/js/views/group.js",
             "/js/views/compare.js", "/js/views/component.js",
             "/js/views/components.js", "/js/views/experiments.js",
-            "/js/markdown.js", "/js/docs.js",
+            "/js/markdown.js", "/js/docs.js", "/js/views/projects.js",
             "/style.css",
         ],
     )
     def test_every_asset_the_shell_needs_is_served(self, client, path):
         assert client.get(path).status_code == 200
+
+
+class TestServeWarnings:
+    """libyaml が無いと resolved.yaml の読み込みが 10 倍遅いので、起動時に知らせる。"""
+
+    @pytest.fixture
+    def no_uvicorn(self, monkeypatch):
+        import uvicorn
+
+        monkeypatch.setattr(uvicorn, "run", lambda *a, **k: None)
+
+    def test_warns_without_libyaml(self, project, monkeypatch, capsys, no_uvicorn):
+        from blab.server import app as appmod
+
+        monkeypatch.setattr(appmod, "FAST_YAML", False)
+        appmod.serve(project)
+        assert "libyaml" in capsys.readouterr().err
+
+    def test_silent_with_libyaml(self, project, monkeypatch, capsys, no_uvicorn):
+        from blab.server import app as appmod
+
+        monkeypatch.setattr(appmod, "FAST_YAML", True)
+        appmod.serve(project)
+        assert "libyaml" not in capsys.readouterr().err

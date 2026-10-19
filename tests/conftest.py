@@ -91,6 +91,25 @@ def project(tmp_path) -> Project:
     return proj
 
 
+class Scoped:
+    """1 プロジェクト分の API を短いパスで叩く（`/api/x` → `/api/p/<uid>/x`、`/files/x` も同様）。"""
+
+    def __init__(self, client, uid: str) -> None:
+        self.client, self.uid = client, uid
+
+    def _url(self, path: str) -> str:
+        for prefix, scoped in (("/api/", f"/api/p/{self.uid}/"), ("/files/", f"/files/{self.uid}/")):
+            if path.startswith(prefix):
+                return scoped + path[len(prefix):]
+        return path
+
+    def get(self, path: str, **kw):
+        return self.client.get(self._url(path), **kw)
+
+    def post(self, path: str, **kw):
+        return self.client.post(self._url(path), **kw)
+
+
 def write_experiment(project: Project, name: str, text: str) -> Path:
     path = project.experiments_dir / f"{name}.yaml"
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,27 @@
 // 閲覧層の HTTP クライアント。
 //
 // サーバはディレクトリを読むだけで、書き込みは moveGroup（= blab mv）だけ。
+//
+// どのプロジェクトを読むかはページの URL（`?p=<project_uid>`）で決まり、API はすべて
+// `/api/p/<uid>/...` の下にある。タブごとに別のプロジェクトを開ける。
+
+let projectUid = null;
+let rootCache = null;
+
+/** 以後の API 呼び出しが読むプロジェクトを決める（起動時に 1 回）。 */
+export function setProject(uid) {
+  projectUid = uid;
+  rootCache = null;
+}
+
+export function currentProject() {
+  return projectUid;
+}
+
+function scoped(path) {
+  if (!projectUid) throw new Error('プロジェクトが選ばれていません');
+  return `/api/p/${encodeURIComponent(projectUid)}${path}`;
+}
 
 async function request(path, { method = 'GET', body = null } = {}) {
   const options = { method, headers: {} };
@@ -31,7 +52,7 @@ export function encodePath(path) {
 
 export function fileUrl(runPath, artifactPath = null) {
   const full = artifactPath ? `${runPath}/${artifactPath}` : runPath;
-  return `/files/${encodePath(full)}`;
+  return `/files/${encodeURIComponent(projectUid || '')}/${encodePath(full)}`;
 }
 
 function query(params) {
@@ -45,30 +66,37 @@ function query(params) {
 }
 
 export const api = {
-  root: '',
+  projects: () => request('/api/projects'),
 
-  status: () => request('/api/status'),
-  experiments: () => request('/api/experiments'),
-  nodes: (params = {}) => request(`/api/nodes${query(params)}`),
+  status: () => request(scoped('/status')),
+  // ログルートの絶対パス（パスのコピー用）。プロジェクトはページ内で変わらないので 1 回だけ聞く。
+  root: async () => {
+    if (rootCache === null) rootCache = api.status().then((s) => s.runs_dir);
+    return rootCache;
+  },
+  experiments: () => request(scoped('/experiments')),
+  nodes: (params = {}) => request(scoped(`/nodes${query(params)}`)),
 
-  detail: (path) => request(`/api/nodes/${encodePath(path)}/detail`),
-  metrics: (path, params = {}) => request(`/api/nodes/${encodePath(path)}/metrics${query(params)}`),
-  runSource: (path, file) => request(`/api/nodes/${encodePath(path)}/source${query({ file })}`),
-  experimentSource: (path) => request(`/api/nodes/${encodePath(path)}/experiment-source`),
-  docs: (path) => request(`/api/nodes/${encodePath(path)}/docs`),
-  doc: (path, name) => request(`/api/nodes/${encodePath(path)}/doc${query({ name })}`),
-  log: (path, name, tail = 0) => request(`/api/nodes/${encodePath(path)}/log${query({ name, tail })}`),
+  detail: (path) => request(scoped(`/nodes/${encodePath(path)}/detail`)),
+  metrics: (path, params = {}) => request(scoped(`/nodes/${encodePath(path)}/metrics${query(params)}`)),
+  runSource: (path, file) => request(scoped(`/nodes/${encodePath(path)}/source${query({ file })}`)),
+  experimentSource: (path) => request(scoped(`/nodes/${encodePath(path)}/experiment-source`)),
+  docs: (path) => request(scoped(`/nodes/${encodePath(path)}/docs`)),
+  doc: (path, name) => request(scoped(`/nodes/${encodePath(path)}/doc${query({ name })}`)),
+  log: (path, name, tail = 0) => request(scoped(`/nodes/${encodePath(path)}/log${query({ name, tail })}`)),
 
-  components: (params = {}) => request(`/api/components${query(params)}`),
-  component: (id) => request(`/api/components/${encodeURIComponent(id)}`),
+  components: (params = {}) => request(scoped(`/components${query(params)}`)),
+  component: (id) => request(scoped(`/components/${encodeURIComponent(id)}`)),
+  // README だけ。component() は全 run の逆引きをするので、run ページからはこちらを使う。
+  componentReadme: (id) => request(scoped(`/components/${encodeURIComponent(id)}/readme`)),
   componentFiles: (id, hash) =>
-    request(`/api/components/${encodeURIComponent(id)}/files${query({ hash })}`),
+    request(scoped(`/components/${encodeURIComponent(id)}/files${query({ hash })}`)),
   componentSource: (id, file, hash) =>
-    request(`/api/components/${encodeURIComponent(id)}/source${query({ file, hash })}`),
+    request(scoped(`/components/${encodeURIComponent(id)}/source${query({ file, hash })}`)),
   componentDiff: (id, a, b) =>
-    request(`/api/components/${encodeURIComponent(id)}/diff${query({ a, b })}`),
+    request(scoped(`/components/${encodeURIComponent(id)}/diff${query({ a, b })}`)),
 
   // UI が行う唯一の書き込み。blab mv と同じ操作を呼ぶ。
   moveGroup: (path, group) =>
-    request(`/api/nodes/${encodePath(path)}/group`, { method: 'POST', body: { group } }),
+    request(scoped(`/nodes/${encodePath(path)}/group`), { method: 'POST', body: { group } }),
 };

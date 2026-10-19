@@ -3,7 +3,7 @@
 // 設計上の約束が、実際に DOM に出ているかを見る。
 
 import assert from 'node:assert/strict';
-import { flatten } from './dom-shim.mjs';
+import { dump, flatten } from './dom-shim.mjs';
 
 const { argsTable, configTree, flattenTree } = await import('../../blab/static/js/config-tree.js');
 const { nodeTable } = await import('../../blab/static/js/table.js');
@@ -243,6 +243,65 @@ function tokens(node) {
   assert.equal(resolveXAxis('auto', []), 'step');
   assert.equal(resolveXAxis('epoch', [perStep]), 'epoch', '明示的に選んだ軸は尊重する');
   console.log('x axis: ok');
+}
+
+// 描く範囲: xlim / ylim は片側だけ指定でき、y の自動は x の範囲に入る点だけで決まる。
+{
+  const { chartRange } = await import('../../blab/static/js/chart.js');
+  const pts = [[[0, 10], [1, 5], [2, 1], [3, 0.5]]];
+
+  const auto = chartRange(pts);
+  assert.equal(auto.xMin, 0);
+  assert.equal(auto.xMax, 3);
+  assert.ok(auto.yMin < 0.5 && auto.yMax > 10, '自動の y は余白を足す');
+
+  const zoomed = chartRange(pts, { xlim: [2, null] });
+  assert.equal(zoomed.xMin, 2);
+  assert.equal(zoomed.xMax, 3, '指定しない側は自動');
+  assert.ok(zoomed.yMax < 5, 'x を絞ると y も範囲内の点に追従する');
+
+  const fixedY = chartRange(pts, { ylim: [0, 2] });
+  assert.equal(fixedY.yMin, 0);
+  assert.equal(fixedY.yMax, 2, 'ylim はそのまま使う（余白を足さない）');
+
+  const log = chartRange(pts, { logY: true, ylim: [0, 100] });
+  assert.equal(log.yMax, 2, 'log では ylim も log10 で効く');
+  assert.ok(Number.isFinite(log.yMin) && log.yMin < Math.log10(0.5), 'log で 0 以下の下限は自動に戻す');
+
+  const inverted = chartRange(pts, { xlim: [5, 1] });
+  assert.ok(inverted.xMin < inverted.xMax, '逆転した範囲でも幅のある軸になる');
+
+  const empty = chartRange(pts, { xlim: [100, 200] });
+  assert.ok(empty && empty.yMin < empty.yMax, '範囲に点が無くても枠は描ける');
+
+  assert.equal(chartRange([[[NaN, 1]]]), null, '描ける点が無ければ null');
+  console.log('chart range: ok');
+}
+
+// 拡大ボタンは onExpand を渡したときだけ出る。
+{
+  const { lineChart } = await import('../../blab/static/js/chart.js');
+  const series = [{ label: 'a', color: 'red', points: [[0, 1], [1, 2]] }];
+  const hasExpand = (node) => JSON.stringify(dump(node)).includes('chart-expand');
+  assert.ok(!hasExpand(lineChart({ title: 'loss', series })));
+  assert.ok(hasExpand(lineChart({ title: 'loss', series, onExpand: () => {} })));
+  console.log('chart expand: ok');
+}
+
+// 拡大ダイアログの入力と、系列の値の集計。
+{
+  const { parseLimit, seriesStats } = await import('../../blab/static/js/focus.js');
+  assert.equal(parseLimit(''), null);
+  assert.equal(parseLimit('  '), null);
+  assert.equal(parseLimit('abc'), null);
+  assert.equal(parseLimit('1e-3'), 0.001);
+  assert.equal(parseLimit('-2'), -2);
+
+  const pts = [[0, 3], [1, 1], [2, NaN], [3, 2], [4, 5]];
+  assert.deepEqual(seriesStats(pts), { n: 4, last: 5, min: 1, max: 5 }, 'NaN は数えない');
+  assert.deepEqual(seriesStats(pts, [1, 3]), { n: 2, last: 2, min: 1, max: 2 }, 'x の範囲内だけで集計する');
+  assert.deepEqual(seriesStats(pts, [10, 20]), { n: 0, last: null, min: null, max: null });
+  console.log('focus: ok');
 }
 
 console.log('\nすべて通りました');

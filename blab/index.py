@@ -8,10 +8,12 @@
 
 from __future__ import annotations
 
+import os
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .aggregate import Stat, aggregate
 from .docs import list_docs
@@ -33,6 +35,175 @@ STATUS_STALE = "stale"
 TRASH_GROUP = "_trash"
 
 
+class FileCache:
+    """ファイルから導出した値を、ファイルの (mtime, size) が変わるまで覚えておく（layout.md §9）。
+
+    `ScanCache` が覚えない実行中のノードの `resolved.yaml` に使う（実行中でも、仮の
+    `resolved.yaml` が書き換わるのは開始と終了の 2 回だけなので、毎回解析し直すほどではない）。
+    """
+
+    def __init__(self) -> None:
+        self._entries: dict[tuple[str, Path], tuple[tuple[int, int], Any]] = {}
+        self._lock = threading.Lock()
+
+    def get(self, path: Path, tag: str, derive: Callable[[Path], Any], default: Any = None) -> Any:
+        """`derive(path)` の結果。ファイルが無ければ `default`。`tag` は導出の種類。"""
+        path = Path(path)
+        try:
+            st = os.stat(path)
+        except OSError:
+            return default
+        stamp = (st.st_mtime_ns, st.st_size)
+        key = (tag, path)
+        with self._lock:
+            hit = self._entries.get(key)
+        if hit is not None and hit[0] == stamp:
+            return hit[1]
+        value = derive(path)
+        with self._lock:
+            self._entries[key] = (stamp, value)
+        return value
+
+    def retain(self, dirs: set[Path]) -> None:
+        """`dirs` の直下のファイル以外の分を捨てる（消えた・移された run の分）。"""
+        with self._lock:
+            for key in [k for k in self._entries if k[1].parent not in dirs]:
+                del self._entries[key]
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+
+#: `ScanCache` の保存形式。中身の意味を変えたら上げる（古いものは読み捨てる）。
+SCAN_CACHE_VERSION = 1
+
+
+class _Entry:
+    """1 ノード分の覚えた値。`stamp` はノードのディレクトリの (mtime, inode)。"""
+
+    __slots__ = ("stamp", "meta", "values")
+
+    def __init__(self, stamp: tuple[int, int], meta: dict, values: dict | None = None) -> None:
+        self.stamp = stamp
+        self.meta = meta
+        self.values = values if values is not None else {}
+
+
+class ScanCache:
+    """走査の結果を、**ノードのディレクトリの mtime が変わるまで**覚えておく（layout.md §9）。
+
+    ログルートが NFS 上にあると、ファイルを 1 つ開くたびにサーバへの往復が要り、run が
+    数百あると一覧を開くだけで数秒〜十数秒かかる。そこで、ファイルではなくディレクトリを見る。
+
+    - blab は `meta.json` / `summary.json` / `resolved.yaml` をすべて rename で原子的に書く
+      ので、どれかが変わればそのディレクトリの mtime が変わる。ドキュメント（`*.md`）の追加・
+      削除も同じ。ディレクトリの mtime は親の readdir でまとめて取れるので、変わっていない
+      run のファイルは 1 つも開かない
+    - 実行中（`status == "running"`）のノードは覚えない。heartbeat と summary は毎回読む
+    - 覚えた値は `path`（ローカルの `~/.blab/cache/`）に保存し、`blab ui` を起動し直しても
+      使い回す。消してよい（次の走査で作り直すだけ）
+
+    rename せずに中身だけ書き換えたファイル（手でその場編集した summary.json など）は
+    見落とす。そのときはキャッシュのファイルを消して開き直す。
+    """
+
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = Path(path) if path is not None else None
+        self.files = FileCache()
+        self._entries: dict[str, _Entry] = {}
+        self._seen: set[str] = set()
+        self._lock = threading.Lock()
+        self._dirty = False
+        if self.path is not None:
+            self._load()
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    # ----------------------------------------------------------- 走査から使う
+
+    def lookup(self, path: Path, stamp: tuple[int, int]) -> _Entry | None:
+        key = str(path)
+        with self._lock:
+            self._seen.add(key)
+            hit = self._entries.get(key)
+        return hit if hit is not None and hit.stamp == stamp else None
+
+    def store(self, path: Path, stamp: tuple[int, int], meta: dict) -> _Entry:
+        entry = _Entry(stamp, meta)
+        with self._lock:
+            self._entries[str(path)] = entry
+            self._dirty = True
+        return entry
+
+    def value(self, entry: _Entry, name: str, derive: Callable[[], Any]) -> Any:
+        """`entry` に覚えた `name` の値。無ければ `derive()` して覚える。"""
+        if name in entry.values:
+            return entry.values[name]
+        value = derive()
+        with self._lock:
+            entry.values[name] = value
+            self._dirty = True
+        return value
+
+    def begin(self) -> None:
+        with self._lock:
+            self._seen = set()
+
+    def end(self) -> None:
+        """走査で見なかったノード（消えた・移された run）の分を捨てる。"""
+        with self._lock:
+            for key in [k for k in self._entries if k not in self._seen]:
+                del self._entries[key]
+                self._dirty = True
+        self.files.retain({Path(k) for k in self._seen})
+
+    # ---------------------------------------------------------------- 保存
+
+    def save(self) -> None:
+        """変わったところがあれば保存する。書けなくても走査は続ける（ただのキャッシュなので）。"""
+        if self.path is None:
+            return
+        with self._lock:
+            if not self._dirty:
+                return
+            doc = {
+                "schema_version": SCAN_CACHE_VERSION,
+                "entries": {
+                    key: {"stamp": list(e.stamp), "meta": e.meta, "values": dict(e.values)}
+                    for key, e in self._entries.items()
+                },
+            }
+            self._dirty = False
+        from .io import write_json_atomic
+
+        try:
+            write_json_atomic(self.path, doc)
+        except (OSError, TypeError, ValueError):
+            pass
+
+    def _load(self) -> None:
+        doc = read_json(self.path, default=None)
+        if not isinstance(doc, dict) or doc.get("schema_version") != SCAN_CACHE_VERSION:
+            return
+        entries = doc.get("entries")
+        if not isinstance(entries, dict):
+            return
+        for key, raw in entries.items():
+            try:
+                stamp = (int(raw["stamp"][0]), int(raw["stamp"][1]))
+                meta, values = raw["meta"], raw["values"]
+            except (KeyError, IndexError, TypeError, ValueError):
+                continue
+            if isinstance(meta, dict) and isinstance(values, dict):
+                self._entries[key] = _Entry(stamp, meta, values)
+
+
+def _read_summary(path: Path) -> dict | None:
+    doc = read_json(path, default=None)
+    return doc if isinstance(doc, dict) else None
+
+
 @dataclass
 class Node:
     """Experiment / Group / Run のいずれか。種別は `meta.json` の `kind`。"""
@@ -40,6 +211,9 @@ class Node:
     path: Path
     meta: dict
     children: list["Node"] = field(default_factory=list)
+    cache: ScanCache | None = field(default=None, repr=False, compare=False)
+    #: `cache` に覚えた分（実行中のノードは None）
+    entry: _Entry | None = field(default=None, repr=False, compare=False)
 
     @property
     def kind(self) -> str:
@@ -70,16 +244,27 @@ class Node:
             return status
         return STATUS_STALE if (time.time() - last) > STALE_AFTER_SEC else status
 
+    def remember(self, name: str, derive: Callable[[], Any]) -> Any:
+        """ディレクトリが変わるまで覚えておける値。実行中のノードは毎回 `derive()` する。"""
+        if self.cache is not None and self.entry is not None:
+            return self.cache.value(self.entry, name, derive)
+        return derive()
+
     @property
     def summary(self) -> dict:
-        doc = read_json(self.path / SUMMARY_NAME, default=None)
-        if not isinstance(doc, dict):
+        doc = self.remember("summary", lambda: _read_summary(self.path / SUMMARY_NAME))
+        if doc is None:
             return {}
         # group の summary.json は {"values": {...}}（自分自身の値だけ）。
         if self.kind == KIND_GROUP:
             values = doc.get("values")
             return values if isinstance(values, dict) else {}
         return doc
+
+    @property
+    def doc_names(self) -> list[str]:
+        """直下のドキュメントの名前（一覧用。大きさ・更新時刻は要るときに `list_docs` で読む）。"""
+        return self.remember("docs", lambda: [d["name"] for d in list_docs(self.path)])
 
     def leaf_runs(self) -> list["Node"]:
         """配下の葉の run を再帰的に集める（内側の group の集計は見ない）。"""
@@ -97,25 +282,66 @@ class Node:
         )
 
 
-def scan(root: Path) -> list[Node]:
-    """ログルート直下の Experiment を走査して木を返す。"""
+def scan(root: Path, cache: ScanCache | None = None) -> list[Node]:
+    """ログルート直下の Experiment を走査して木を返す。
+
+    `cache` を渡すと、ディレクトリが変わっていないノードはファイルを読まずに覚えた値を使う
+    （`ScanCache`）。実行中のノードの `meta.json`（状態と heartbeat）は毎回読む。
+    """
     root = Path(root)
     if not root.is_dir():
         return []
-    return [node for node in (_read(child) for child in sorted(root.iterdir())) if node]
+    if cache is not None:
+        cache.begin()
+    nodes = _children(root, cache)
+    if cache is not None:
+        cache.end()
+    return nodes
 
 
-def _read(path: Path) -> Node | None:
-    if not path.is_dir():
+def _children(path: Path, cache: ScanCache | None) -> list[Node]:
+    # scandir は種別（と NFS ならディレクトリの属性）を readdir でまとめて取るので、
+    # 子ごとに stat しに行かない。
+    try:
+        with os.scandir(path) as it:
+            entries = sorted((e for e in it if _is_dir(e)), key=lambda e: e.name)
+    except OSError:
+        return []
+    return [node for node in (_read(Path(e.path), cache, e) for e in entries) if node]
+
+
+def _is_dir(entry: os.DirEntry) -> bool:
+    try:
+        return entry.is_dir()
+    except OSError:
+        return False
+
+
+def _read(
+    path: Path, cache: ScanCache | None = None, dir_entry: os.DirEntry | None = None
+) -> Node | None:
+    if dir_entry is None and not path.is_dir():
         return None
-    meta = read_json(path / META_NAME, default=None)
-    if not isinstance(meta, dict):
-        return None  # meta.json を持たないディレクトリはノードではない
-    node = Node(path=path, meta=meta)
+    entry = stamp = None
+    if cache is not None:
+        try:
+            # 読む前に取る（読んだ後だと、その間の書き換えを取りこぼす）。
+            st = dir_entry.stat() if dir_entry is not None else os.stat(path)
+            stamp = (st.st_mtime_ns, st.st_ino)
+            entry = cache.lookup(path, stamp)
+        except OSError:
+            stamp = None
+    if entry is not None:
+        meta = entry.meta
+    else:
+        meta = read_json(path / META_NAME, default=None)
+        if not isinstance(meta, dict):
+            return None  # meta.json を持たないディレクトリはノードではない
+        if cache is not None and stamp is not None and meta.get("status") != STATUS_RUNNING:
+            entry = cache.store(path, stamp, meta)
+    node = Node(path=path, meta=meta, cache=cache, entry=entry)
     if node.kind != KIND_RUN:
-        node.children = [
-            child for child in (_read(c) for c in sorted(path.iterdir())) if child
-        ]
+        node.children = _children(path, cache)
     return node
 
 
@@ -179,10 +405,37 @@ def _column_args(node: dict) -> dict:
     return shared
 
 
+def _resolved_info(path: Path) -> dict | None:
+    """`resolved.yaml` のうち、一覧と component の逆引きに要る部分だけ。壊れていれば None。
+
+    中身そのものは返さない（`.build()` に渡した症例リストなどで大きくなることがあるため）。
+    """
+    from .resolved import iter_components, load
+
+    try:
+        doc = load(path)
+        components = [
+            (str(c.get("use")), str(c["hash"])) for _, c in iter_components(doc) if c.get("hash")
+        ]
+        return {"config": flatten_config(doc), "components": components}
+    except Exception:  # noqa: BLE001 - 壊れた run で一覧を落とさない
+        return None
+
+
+def resolved_info(node: Node) -> dict | None:
+    """run の `_resolved_info`。`node.cache` があればそこに覚える。"""
+    from .resolved import RESOLVED_NAME
+
+    path = node.path / RESOLVED_NAME
+    if node.entry is not None:
+        return node.remember("resolved", lambda: _resolved_info(path))
+    if node.cache is not None:
+        return node.cache.files.get(path, "resolved", _resolved_info)
+    return _resolved_info(path) if path.is_file() else None
+
+
 def row(node: Node, root: Path) -> dict:
     """run / group の 1 行分。"""
-    from .resolved import RESOLVED_NAME, load
-
     out: dict[str, Any] = {
         "path": relpath(root, node.path),
         "kind": node.kind,
@@ -193,17 +446,14 @@ def row(node: Node, root: Path) -> dict:
         "duration_sec": node.meta.get("duration_sec"),
         "tags": node.meta.get("tags") or [],
         "notes": node.meta.get("notes") or "",
-        "docs": [d["name"] for d in list_docs(node.path)],
+        "docs": node.doc_names,
         "summary": node.summary,
         "config": {},
     }
     if node.kind == KIND_RUN:
-        path = node.path / RESOLVED_NAME
-        if path.is_file():
-            try:
-                out["config"] = flatten_config(load(path))
-            except Exception:  # noqa: BLE001 - 壊れた run で一覧を落とさない
-                out["config"] = {}
+        info = resolved_info(node)
+        if info is not None:
+            out["config"] = info["config"]
         for key in ("source", "replay_of", "moved_from", "exit"):
             if node.meta.get(key):
                 out[key] = node.meta[key]
@@ -218,6 +468,12 @@ def row(node: Node, root: Path) -> dict:
 
 
 def relpath(root: Path, path: Path) -> str:
+    # 走査したノードはルートの下に組み立てたパスなので、まずはそのまま比べる。resolve() は
+    # パスの各段を lstat するので、NFS 上で行ごとに呼ぶと遅い。
+    try:
+        return str(Path(path).relative_to(root))
+    except ValueError:
+        pass
     try:
         return str(Path(path).resolve().relative_to(Path(root).resolve()))
     except ValueError:
@@ -346,26 +602,21 @@ def list_logs(run_path: Path) -> list[dict]:
 # ------------------------------------------------------------ component 逆引き
 
 
-def runs_using(root: Path) -> dict[str, list[tuple[str, Node]]]:
+def runs_using(
+    root: Path, nodes: list[Node] | None = None
+) -> dict[str, list[tuple[str, Node]]]:
     """component のハッシュ → それを使った run の一覧。
 
-    `resolved.yaml` を読んでハッシュの逆写像を張る（layout.md §9）。
+    `resolved.yaml` を読んでハッシュの逆写像を張る（layout.md §9）。`nodes` に走査済みの木を
+    渡すと走査し直さない（UI はキャッシュ付きで走査した木を渡す）。
     """
-    from .resolved import RESOLVED_NAME, iter_components, load
-
     out: dict[str, list[tuple[str, Node]]] = {}
-    for node in walk(scan(root)):
+    for node in walk(scan(root) if nodes is None else nodes):
         if node.kind != KIND_RUN:
             continue
-        path = node.path / RESOLVED_NAME
-        if not path.is_file():
+        info = resolved_info(node)
+        if info is None:
             continue
-        try:
-            doc = load(path)
-        except Exception:  # noqa: BLE001 - 壊れた run で一覧を落とさない
-            continue
-        for _, component in iter_components(doc):
-            hash = component.get("hash")
-            if hash:
-                out.setdefault(str(hash), []).append((str(component.get("use")), node))
+        for use, hash in info["components"]:
+            out.setdefault(hash, []).append((use, node))
     return out

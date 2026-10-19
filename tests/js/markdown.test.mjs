@@ -6,6 +6,10 @@ import assert from 'node:assert/strict';
 import './dom-shim.mjs';
 
 const { markdownBlock } = await import('../../blab/static/js/markdown.js');
+const { setProject } = await import('../../blab/static/js/api.js');
+
+// ファイルの URL はプロジェクトごと（/files/<uid>/...）。
+setProject('p1');
 
 function all(node, pred, out = []) {
   if (!node || node.nodeType !== 1) return out;
@@ -127,12 +131,12 @@ const text = (node) => node.textContent;
   ].join('\n'), { base: 'cifar100/cv5/run1', onDocLink: (name, anchor) => opened.push([name, anchor]) });
 
   const img = byTag(md, 'img')[0];
-  assert.equal(img.attributes.src, '/files/cifar100/cv5/run1/artifacts/cm.png', '相対パスの画像はノードのファイルとして解決する');
+  assert.equal(img.attributes.src, '/files/p1/cifar100/cv5/run1/artifacts/cm.png', '相対パスの画像はノードのファイルとして解決する');
 
   const links = byTag(md, 'a').filter((a) => !String(a.className).includes('md-image'));
   const hrefs = links.map((a) => a.attributes.href);
   assert.ok(hrefs.includes('https://example.com'));
-  assert.ok(hrefs.includes('/files/cifar100/cv5/group.md'), '.. を畳んで解決する');
+  assert.ok(hrefs.includes('/files/p1/cifar100/cv5/group.md'), '.. を畳んで解決する');
   assert.ok(hrefs.includes('https://a.example/x'), '<URL> の自動リンク');
   assert.ok(hrefs.includes('https://b.example/y'), '本文中の URL');
   assert.ok(!hrefs.some((h) => String(h).startsWith('javascript')), 'javascript: は辿らせない');

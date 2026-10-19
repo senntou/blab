@@ -195,4 +195,5 @@ def test_ui_builds_an_app_without_serving(project):
 
     app = create_app(project)
     routes = {getattr(r, "path", "") for r in app.routes}
-    assert "/api/status" in routes and "/api/nodes" in routes
+    assert "/api/projects" in routes
+    assert "/api/p/{uid}/status" in routes and "/api/p/{uid}/nodes" in routes

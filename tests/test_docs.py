@@ -15,7 +15,7 @@ from blab.errors import BlabError
 from blab.preflight import preflight
 from blab.runner import execute
 from blab.spec import load_experiment, parse_document
-from conftest import BASELINE, TRAINER, write_component, write_experiment
+from conftest import BASELINE, TRAINER, Scoped, write_component, write_experiment
 
 
 def go(project, text: str = BASELINE):
@@ -158,7 +158,7 @@ class TestServer:
         (self.run / "README.md").write_text("# run の意図", encoding="utf-8")
         (self.run.parent / "group.md").write_text("# group", encoding="utf-8")
         (self.run.parent.parent / "README.md").write_text("# experiment", encoding="utf-8")
-        return TestClient(create_app(project))
+        return Scoped(TestClient(create_app(project)), project.uid)
 
     def test_detail_lists_docs(self, client):
         detail = client.get("/api/nodes/cifar100/cv5/" + self.run.name + "/detail").json()

@@ -75,7 +75,8 @@ blab が中にプロジェクト名のサブディレクトリを作ることは
 }
 ```
 
-`blab init` / `blab link` が書く。別プロジェクトの component 参照（§3.1）の解決に使う。
+`blab init` / `blab link` が書く。別プロジェクトの component 参照（§3.1）の解決と、
+UI で開けるプロジェクトの候補（§9）に使う。
 索引に無いプロジェクトを参照した場合は事前検証でエラーになる。
 
 ## 2. component（`components/`）
@@ -581,10 +582,23 @@ component はプロジェクトの `components/` ではなく、run の中のコ
 - **`_trash` は予約された group 名。** UI の「削除」は run をこの group へ移す操作である。
   一覧 API は既定でこの配下を返さない（`include_trash=1` で含める）ので、通常の run 一覧と
   experiment の集計には出ない。ファイルは残るので、`_trash` から移し戻せば元に戻る
-- `meta.json` / `summary.json` / `resolved.yaml` は mtime が変わったものだけ読み直す
+- 走査の結果（`meta.json`、`summary.json`、`resolved.yaml` から導出した一覧の値、ドキュメントの名前）は
+  **ノードのディレクトリの mtime が変わるまで**覚え、変わっていないノードのファイルは開かない
+  （NFS ではファイルを 1 つ開くたびにサーバへの往復が要るため）。blab はこれらをすべて rename で
+  原子的に書くので、書き換わればディレクトリの mtime が変わる。ディレクトリの mtime は親の
+  readdir でまとめて取る
+  - 実行中（`status == "running"`）のノードは覚えず、`meta.json`（状態と heartbeat）と `summary.json` を毎回読む
+  - 覚えた値はローカルの `~/.blab/cache/scan-<ログルートのハッシュ>.json` に保存し、`blab ui` を
+    起動し直しても使う。いつ消してもよい。消えた run の分は次の走査で捨てる
+  - rename せずにその場で書き換えたファイル（手で編集した `summary.json` など）は見落とす。
+    そのときはこのファイルを消す。別のマシンからの書き換えは、NFS の属性キャッシュの分（最大 1 分ほど）遅れて見える
+- run 詳細の焼き込み component のハッシュは `resolved.yaml` に記録された値を返す（開くたびにソースを読んで計算し直さない）
 - `metrics.jsonl` は読み終えた位置を保持し、追記分だけ読む
 - component の逆引き（その component を使った run の一覧）は、`resolved.yaml` のハッシュから作る
-- `/files/{path}` はルート外へのパス（`..`、絶対パス、symlink 経由）を拒否する
+- API はプロジェクトごとに `/api/p/{project_uid}/...`、ファイルは `/files/{project_uid}/{path}` の下にある。
+  開けるのはグローバル索引（§1.2）に載ったプロジェクトと、`blab ui` を起動したプロジェクトだけで、
+  任意のパスを UI から開かせる経路は無い。候補の一覧は `/api/projects`
+- `/files/{project_uid}/{path}` はルート外へのパス（`..`、絶対パス、symlink 経由）を拒否する
 - ドキュメントの本文を返す API はノード直下の `*.md` しか読まない。Markdown 中の生の HTML は描画せず、
   リンクは http(s) / mailto / 相対パスだけを辿らせる
 - 数式の描画には KaTeX を同梱している（`/vendor/katex/`）。外部 CDN には接続しない

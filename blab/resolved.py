@@ -25,6 +25,12 @@ from .spec import Experiment
 
 RESOLVED_NAME = "resolved.yaml"
 
+#: 読み込みは libyaml（C 実装）があればそれを使う。`.build()` に渡した症例リストなどで
+#: 数百 KB になる run があり、pure Python の SafeLoader では UI の一覧が 10 秒単位で遅くなる。
+_Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+#: libyaml が使えるか。無ければ `blab ui` の起動時に警告する。
+FAST_YAML = _Loader is not yaml.SafeLoader
+
 
 def dump(path: Path, doc: dict) -> None:
     """`resolved.yaml` を原子的に書く。"""
@@ -55,7 +61,7 @@ def dump(path: Path, doc: dict) -> None:
 def load(path: Path) -> dict:
     path = Path(path)
     try:
-        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        doc = yaml.load(path.read_text(encoding="utf-8"), Loader=_Loader)
     except OSError as e:
         raise BlabError(f"{path} を読めません: {e}") from e
     except yaml.YAMLError as e:

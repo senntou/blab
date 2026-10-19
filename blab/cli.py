@@ -11,7 +11,7 @@ from . import __version__
 from .components import Meta, hash_dir, list_ids, short_hash
 from .errors import BlabError
 from .preflight import ERROR, preflight
-from .project import GlobalIndex, Project, init as project_init, write_gitignore
+from .project import GlobalIndex, Project, find_root, init as project_init, write_gitignore
 from .spec import load_experiment
 
 
@@ -532,7 +532,12 @@ def cmd_mv(args) -> None:
 
 
 def cmd_ui(args) -> None:
-    project = _project(args)
+    # プロジェクトの外でも起動できる。そのときは UI でグローバル索引から選ぶ。
+    root = find_root()
+    project = Project.at(root) if root is not None else None
+    if project is None and args.runs_dir:
+        _fail("--runs-dir はプロジェクトの中で起動したときだけ使えます")
+        return
     try:
         from .server import serve
     except ImportError:
@@ -747,7 +752,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=8420)
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--open", action="store_true", help="ブラウザを開く")
-    p.add_argument("--runs-dir")
+    p.add_argument("--runs-dir", help="起動したプロジェクトのログルートを上書きする")
     p.set_defaults(func=cmd_ui)
 
     return parser

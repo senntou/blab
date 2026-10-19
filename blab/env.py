@@ -92,6 +92,15 @@ def _git(project_root: Path | None) -> dict:
 
 
 def _cuda() -> dict:
+    """CUDA 情報。**親プロセスで CUDA を初期化しない**（driver の `cuInit` も含めて）。
+
+    親が一度でも CUDA に触ると、fork で GPU ごとに子を立てるコンポーネントが
+    `Cannot re-initialize CUDA in forked subprocess` で落ちる。`get_device_name` は
+    `_lazy_init()` で、`is_available()` は（`PYTORCH_NVML_BASED_CUDA_CHECK` が無ければ）
+    `cudaGetDeviceCount` で、`device_count()` も NVML に失敗すると同じ経路で CUDA に触る。
+    `torch.backends.cudnn.version()` も初回の `_init()` で `is_available()` を呼ぶ。
+    だから初期化済みのときだけ torch に聞き、それ以外は GPU の有無も名前も nvidia-smi に聞く。
+    """
     if "torch" not in sys.modules:
         try:
             import torch  # noqa: F401
@@ -99,13 +108,67 @@ def _cuda() -> dict:
             return _unavailable(f"torch を import できない: {type(e).__name__}")
     torch = sys.modules["torch"]
     try:
-        if not torch.cuda.is_available():
+        if torch.version.cuda is None:
+            return _unavailable("torch が CUDA 無しでビルドされている")
+        if torch.cuda.is_initialized():
+            gpus: list[str] | dict = [
+                torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())
+            ]
+        else:
+            gpus = _visible_gpus()
+        if isinstance(gpus, dict):
+            return gpus
+        if not gpus:
             return _unavailable("CUDA が利用できない")
         return {
             "torch_cuda": torch.version.cuda,
-            "cudnn": str(getattr(torch.backends.cudnn, "version", lambda: None)()),
-            "gpu": torch.cuda.get_device_name(0),
-            "n_gpu": torch.cuda.device_count(),
+            "cudnn": _cudnn_version(torch),
+            "gpu": gpus[0],
+            "n_gpu": len(gpus),
         }
     except Exception as e:  # noqa: BLE001
         return _unavailable(f"CUDA 情報の取得に失敗: {type(e).__name__}: {e}")
+
+
+def _cudnn_version(torch) -> str | dict:
+    """cuDNN の版。`torch.backends.cudnn.version()` は fork を汚すので、ライブラリに直接聞く。"""
+    if torch.cuda.is_initialized():
+        return str(torch.backends.cudnn.version())
+    cudnn = getattr(torch._C, "_cudnn", None)
+    if cudnn is None:
+        return _unavailable("torch が cuDNN 無しでビルドされている")
+    return str(cudnn.getVersionInt())
+
+
+def _visible_gpus() -> list[str] | dict:
+    """torch から見える GPU の名前を、torch の device 番号順に nvidia-smi で得る。
+
+    nvidia-smi は `CUDA_VISIBLE_DEVICES` を見ないので、ここで index / UUID を突き合わせる。
+    """
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,uuid,name", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        return _unavailable(f"nvidia-smi を実行できない: {type(e).__name__}")
+    if out.returncode != 0:
+        return _unavailable("CUDA が利用できない（nvidia-smi が失敗した）")
+    rows = [
+        [c.strip() for c in line.split(",", 2)]
+        for line in out.stdout.splitlines()
+        if line.count(",") >= 2
+    ]
+    if "CUDA_VISIBLE_DEVICES" not in os.environ:
+        return [name for _, _, name in rows]
+    gpus = []
+    for want in os.environ["CUDA_VISIBLE_DEVICES"].split(","):
+        want = want.strip()
+        hit = [n for idx, uuid, n in rows if want and (want == idx or uuid.startswith(want))]
+        if len(hit) != 1:
+            break  # CUDA も不正な（見つからない）エントリ以降は無視する
+        gpus.append(hit[0])
+    return gpus

@@ -117,6 +117,8 @@ export async function groupView(ctx, path) {
   return {
     node,
     refresh: load,
+    // タブ名は ID（ディレクトリ名）ではなく表示名（meta の name）にする。
+    title: () => `${detail.name || path.split('/').pop()} · ${path.split('/')[0]}`,
     live: () => detail && (detail.runs || []).some((r) => r.status === 'running' || r.status === 'stale'),
   };
 }

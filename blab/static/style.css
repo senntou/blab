@@ -2641,6 +2641,21 @@ code.block {
   flex-wrap: wrap;
 }
 .project-name { font-weight: 600; color: var(--text-2); }
+/* トップバーのプロジェクト切り替え。普段は名前に見え、押すと候補が開く。 */
+.root-label .project-select {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 220px;
+  padding: 1px 2px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.root-label .project-select:hover { border-color: var(--border); }
 
 .meta-grid {
   display: grid;
@@ -3405,7 +3420,8 @@ table.compare-table td.best { background: var(--best); }
   .search input,
   .move-picker-body input,
   .move-row input,
-  .move-row select {
+  .move-row select,
+  .root-label .project-select {
     font-size: 16px;
   }
 }
@@ -3607,4 +3623,134 @@ table.compare-table td.best { background: var(--best); }
   .docs-body {
     padding: 10px 12px 14px;
   }
+}
+
+/* ------------------------------------------------- グラフの拡大（focus.js） */
+
+.chart-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chart-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.chart-expand {
+  padding: 2px;
+  opacity: 0.55;
+}
+.chart:hover .chart-expand,
+.chart-expand:focus-visible {
+  opacity: 1;
+}
+.chart-svg .brush {
+  fill: var(--accent-soft);
+  stroke: var(--accent-line);
+}
+
+.focus-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgb(8 12 18 / 60%);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4vh 16px;
+  overflow-y: auto;
+}
+.focus-dialog {
+  width: min(1200px, 100%);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-3);
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.focus-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.focus-title {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.focus-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  font-size: 13px;
+}
+.focus-lim {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+}
+.focus-lim-label {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.focus-limit {
+  width: 88px;
+  padding: 3px 7px;
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--text);
+}
+.focus-chart .chart-svg {
+  max-height: 68vh;
+}
+.focus-stats {
+  overflow-x: auto;
+}
+.focus-table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+  width: 100%;
+}
+.focus-table th,
+.focus-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.focus-table td.num,
+.focus-table th.num {
+  text-align: right;
+}
+.focus-table tbody tr {
+  cursor: pointer;
+}
+.focus-table tbody tr:hover {
+  background: var(--panel-2);
+}
+.focus-table tbody tr.off {
+  opacity: 0.4;
+}
+.focus-series-name {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+.focus-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.focus-chart .chart-svg {
+  cursor: crosshair;
 }

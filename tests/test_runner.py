@@ -183,10 +183,73 @@ class TestEnv:
         env = json.loads((go(project).run.path / "env.json").read_text())
         assert env["python"] and env["hostname"] and env["platform"]
 
-    def test_missing_things_say_why(self, project):
+    def test_missing_things_say_why(self, project, monkeypatch):
         """取得に失敗した項目は `null` にせず、理由を残す。"""
+        import sys
+
+        monkeypatch.setitem(sys.modules, "torch", None)  # import torch が ImportError になる
         env = json.loads((go(project).run.path / "env.json").read_text())
-        assert "$unavailable" in env["cuda"]  # このテスト環境に CUDA は無い
+        assert "$unavailable" in env["cuda"]
+
+    def test_does_not_touch_cuda(self, monkeypatch):
+        """親で CUDA に触ると、fork で GPU ごとに子を立てるコンポーネントが落ちる。"""
+        import subprocess
+        import sys
+        import types
+
+        from blab import env as env_mod
+
+        def boom(*_):
+            raise AssertionError("CUDA に触った")
+
+        cuda = types.SimpleNamespace(
+            is_available=boom,  # cudaGetDeviceCount → cuInit
+            is_initialized=lambda: False,
+            device_count=boom,  # NVML に失敗すると cudaGetDeviceCount
+            get_device_name=boom,  # _lazy_init
+        )
+        fake = types.SimpleNamespace(
+            cuda=cuda,
+            version=types.SimpleNamespace(cuda="12.8"),
+            backends=types.SimpleNamespace(cudnn=types.SimpleNamespace(version=boom)),  # _init が is_available
+            _C=types.SimpleNamespace(_cudnn=types.SimpleNamespace(getVersionInt=lambda: 91900)),
+        )
+        monkeypatch.setitem(sys.modules, "torch", fake)
+        smi = "0, GPU-aaaa, NVIDIA RTX A6000\n1, GPU-bbbb, NVIDIA A100\n"
+        monkeypatch.setattr(
+            env_mod.subprocess,
+            "run",
+            lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout=smi, stderr=""),
+        )
+
+        monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+        assert env_mod._cuda()["gpu"] == "NVIDIA RTX A6000"
+        assert env_mod._cuda()["n_gpu"] == 2
+        assert env_mod._cuda()["cudnn"] == "91900"
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-bb,0")
+        assert env_mod._cuda()["gpu"] == "NVIDIA A100"
+        assert env_mod._cuda()["n_gpu"] == 2
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1,7,0")  # 見つからない以降は無視
+        assert env_mod._cuda()["n_gpu"] == 1
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+        assert "$unavailable" in env_mod._cuda()
+
+    def test_forked_children_can_still_use_cuda(self, project):
+        """実 GPU で: collect() の後でも fork した子が CUDA を使える。"""
+        import multiprocessing as mp
+
+        from blab import env as env_mod
+
+        torch = pytest.importorskip("torch")
+        # device_count() は NVML に失敗すると CUDA に触るので、GPU の有無は nvidia-smi に聞く
+        if torch.cuda.is_initialized() or not isinstance(env_mod._visible_gpus(), list):
+            pytest.skip("GPU が無い、または既に CUDA 初期化済み")
+
+        env_mod.collect(project.root)
+        child = mp.get_context("fork").Process(target=_use_cuda)
+        child.start()
+        child.join(60)
+        assert child.exitcode == 0
 
 
 class TestData:
@@ -228,3 +291,10 @@ class TestData:
 
         doc = json.loads((path / "data.json").read_text())
         assert doc["FOLDS"]["hash_kind"] == "partial"
+
+
+def _use_cuda():
+    import torch
+
+    torch.cuda.set_device(0)
+    torch.zeros(1, device="cuda")

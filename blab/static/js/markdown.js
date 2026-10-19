@@ -9,7 +9,7 @@
 //   読み込めなければ TeX のソースをそのまま見せる
 // - `base`（ノードのパス）を渡すと、相対パスの画像・リンクをそのノードのファイルとして解決する
 
-import { encodePath } from './api.js';
+import { fileUrl } from './api.js';
 // source.js は markdownBlock を再エクスポートしているので循環 import になるが、
 // codeBlock を使うのは描画時（モジュール評価の後）なので問題ない。
 import { codeBlock } from './source.js';
@@ -116,7 +116,7 @@ function resolveUrl(raw, ctx, { image = false } = {}) {
   if (!image && ctx.onDocLink && /^[^/]+\.md$/i.test(decoded.replace(/^\.\//, ''))) {
     return { href: '#', doc: decoded.replace(/^\.\//, ''), anchor: hash ? slugify(hash) : null };
   }
-  return { href: `/files/${encodePath(joinPath(ctx.base, decoded))}`, external: true };
+  return { href: fileUrl(joinPath(ctx.base, decoded)), external: true };
 }
 
 export function slugify(text) {

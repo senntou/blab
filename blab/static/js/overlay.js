@@ -2,6 +2,7 @@
 
 import { api } from './api.js';
 import { lineChart, resolveXAxis, seriesPoints } from './chart.js';
+import { openChartFocus } from './focus.js';
 import { countLabel, filterBox, rankByQuery } from './filter.js';
 import { icon } from './icons.js';
 import { getPref, setPref } from './prefs.js';
@@ -116,14 +117,24 @@ export function metricsOverlay(paths, labels) {
         const s = m && m.series[key];
         if (s) raw.push([p, i, s]);
       });
-      // auto はキーごとに、重ねる全 run の系列で判定する（1 枚のグラフの中で軸を混ぜない）。
-      const axis = resolveXAxis(opts.xAxis, raw.map(([, , s]) => s));
-      const series = raw.map(([p, i, s]) => ({
-        label: labels.get(p) || p,
-        color: colorFor(i),
-        points: seriesPoints(s, axis),
+      const build = (choice) => {
+        // auto はキーごとに、重ねる全 run の系列で判定する（1 枚のグラフの中で軸を混ぜない）。
+        const axis = resolveXAxis(choice, raw.map(([, , s]) => s));
+        const series = raw.map(([p, i, s]) => ({
+          label: labels.get(p) || p,
+          color: colorFor(i),
+          points: seriesPoints(s, axis),
+        }));
+        return { axis, series };
+      };
+      const { axis, series } = build(opts.xAxis);
+      grid.append(lineChart({
+        title: key,
+        xLabel: axis,
+        logY: opts.logY,
+        series,
+        onExpand: () => openChartFocus({ title: key, xAxis: opts.xAxis, logY: opts.logY, build }),
       }));
-      grid.append(lineChart({ title: key, xLabel: axis, logY: opts.logY, series }));
     }
   }
 

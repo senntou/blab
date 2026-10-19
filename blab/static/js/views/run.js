@@ -3,6 +3,7 @@
 import { api, fileUrl } from '../api.js';
 import { artifactBrowser } from '../artifacts.js';
 import { lineChart, resolveXAxis, seriesPoints } from '../chart.js';
+import { openChartFocus } from '../focus.js';
 import { argsTable, configTree, flattenTree, renderValue, shortHash, versionLabel, versionTitle } from '../config-tree.js';
 import { docsMark, docsPanel } from '../docs.js';
 import { countLabel, filterBox, filteredTable, rankByQuery } from '../filter.js';
@@ -67,7 +68,7 @@ const componentInfoCache = new Map();
 
 function loadComponentInfo(id) {
   if (!componentInfoCache.has(id)) {
-    componentInfoCache.set(id, api.component(id).catch(() => null));
+    componentInfoCache.set(id, api.componentReadme(id).catch(() => null));
   }
   return componentInfoCache.get(id);
 }
@@ -228,15 +229,19 @@ async function metricsPanel(path, keys) {
     }
     for (const name of shown) {
       // auto は系列ごとに判定する（step ごとの train と epoch ごとの val が混ざる run がある）。
-      const axis = resolveXAxis(xAxis, [series[name]]);
-      const points = seriesPoints(series[name], axis);
+      const build = (choice) => {
+        const axis = resolveXAxis(choice, [series[name]]);
+        return { axis, series: [{ label: name, color: 'var(--accent)', points: seriesPoints(series[name], axis) }] };
+      };
+      const { axis, series: lines } = build(xAxis);
       charts.append(
         lineChart({
           title: name,
-          series: [{ label: name, color: 'var(--accent)', points }],
+          series: lines,
           xLabel: axis,
           logY,
           legend: false,
+          onExpand: () => openChartFocus({ title: name, xAxis, logY, build }),
         }),
       );
     }
@@ -600,6 +605,8 @@ export async function runView(ctx, path) {
   return {
     node,
     refresh: load,
+    // タブ名は ID（ディレクトリ名）ではなく表示名（meta の name）にする。
+    title: () => `${detail.name || path.split('/').pop()} · ${path.split('/')[0]}`,
     live: () => detail && (detail.status === 'running' || detail.status === 'stale'),
   };
 }
