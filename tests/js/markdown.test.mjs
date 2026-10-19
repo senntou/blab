@@ -156,4 +156,34 @@ const text = (node) => node.textContent;
   console.log('readme: ok');
 }
 
+// ---------------------------------------------------------------- 画像ビューア
+{
+  const { fitView, zoomAt, clampScale, MAX_SCALE } = await import('../../blab/static/js/imageview.js');
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+
+  // 横長の画像は幅で決まり、上下の中央に置かれる。
+  const v = fitView(2000, 1000, 1048, 1048, { margin: 24 });
+  assert.ok(near(v.scale, 0.5));
+  assert.ok(near(v.x, 24) && near(v.y, (1048 - 500) / 2), '全体表示は中央に置く');
+  // 小さな画像は、開いたとき (upscale: false) は原寸、全体表示では画面いっぱいまで引き伸ばす。
+  assert.equal(fitView(10, 10, 500, 500, { upscale: false }).scale, 1);
+  assert.ok(fitView(10, 10, 500, 500).scale > 40);
+
+  // 拡大縮小してもカーソルの下の点は動かない。
+  const z = zoomAt({ scale: 1, x: 100, y: 50 }, 3, 400, 300);
+  assert.ok(near((400 - z.x) / z.scale, 300) && near((300 - z.y) / z.scale, 250), 'カーソル位置を中心に拡大する');
+  // 倍率の上限は緩い（原寸の 1000 倍まで）。上限に当たったら位置も動かさない。
+  assert.ok(MAX_SCALE >= 1000);
+  assert.equal(clampScale(1e9), MAX_SCALE);
+  const top = zoomAt({ scale: MAX_SCALE, x: 5, y: 7 }, 2, 300, 300);
+  assert.deepEqual(top, { scale: MAX_SCALE, x: 5, y: 7 });
+
+  // Markdown の画像は、押したら別タブではなくその場のビューアで開く。修飾キー付きは別タブのまま。
+  const link = byClass(markdownBlock('![図](https://example.com/a.png)'), 'md-image')[0];
+  let prevented = false;
+  link.listeners.click[0]({ ctrlKey: true, button: 0, preventDefault() { prevented = true; } });
+  assert.equal(prevented, false, 'Ctrl+クリックはブラウザに任せる');
+  console.log('image viewer: ok');
+}
+
 console.log('\nすべて通りました');

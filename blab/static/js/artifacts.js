@@ -2,6 +2,7 @@
 
 import { api, fileUrl } from './api.js';
 import { icon } from './icons.js';
+import { openImageView } from './imageview.js';
 import { getPref, setPref } from './prefs.js';
 import { el, clear, colorFor, copyButton, fmtBytes, fmtTime } from './util.js';
 
@@ -38,7 +39,7 @@ export async function renderArtifact(container, runPath, artifact, { compact = f
 
   if (artifact.type === 'image') {
     const img = el('img', { class: 'artifact-image', src: url, alt: artifact.name, title: 'クリックで拡大' });
-    img.addEventListener('click', () => lightbox(url, artifact.name));
+    img.addEventListener('click', () => openImageView(url, artifact.name));
     bodyNode.append(img);
     return;
   }
@@ -54,7 +55,7 @@ export async function renderArtifact(container, runPath, artifact, { compact = f
         bodyNode.append(placeholder('image', 'このブラウザは TIFF をプレビューできません。ダウンロードして開いてください。'));
       },
     });
-    img.addEventListener('click', () => lightbox(url, artifact.name));
+    img.addEventListener('click', () => openImageView(url, artifact.name));
     bodyNode.append(img);
     return;
   }
@@ -92,27 +93,6 @@ function revealOnNarrow(node) {
 
 function placeholder(iconName, text) {
   return el('div', { class: 'viewer-placeholder' }, [icon(iconName, { size: 26 }), el('p', { text })]);
-}
-
-/** 画像を画面いっぱいに拡大するオーバーレイ。 */
-export function lightbox(url, caption) {
-  const close = () => {
-    box.remove();
-    document.removeEventListener('keydown', onKey);
-  };
-  const onKey = (e) => {
-    if (e.key === 'Escape') close();
-  };
-  const box = el('div', { class: 'lightbox', onclick: close }, [
-    el('div', { class: 'lightbox-bar' }, [
-      el('span', { text: caption || '' }),
-      el('button', { class: 'icon-btn', title: '閉じる (Esc)' }, [icon('x', { size: 18 })]),
-    ]),
-    el('img', { src: url, alt: caption || '', onclick: (e) => e.stopPropagation() }),
-  ]);
-  document.body.append(box);
-  document.addEventListener('keydown', onKey);
-  return box;
 }
 
 /**
@@ -277,7 +257,7 @@ export function artifactCompare(details, { prefKey = null } = {}) {
             icon(a ? (TYPE_ICON[a.type] || 'file') : 'x', { size: 20 }),
             el('span', { text: a ? `${a.type}（プレビュー対象外）` : 'この run にはありません' }),
           ]);
-      if (a && a.type === 'image') media.addEventListener('click', () => lightbox(url, `${d.name} / ${current}`));
+      if (a && a.type === 'image') media.addEventListener('click', () => openImageView(url, `${d.name} / ${current}`));
       grid.append(
         el('figure', { class: 'compare-cell' }, [
           el('figcaption', { class: 'compare-cap' }, [

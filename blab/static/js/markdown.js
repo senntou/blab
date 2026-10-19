@@ -13,6 +13,7 @@ import { fileUrl } from './api.js';
 // source.js は markdownBlock を再エクスポートしているので循環 import になるが、
 // codeBlock を使うのは描画時（モジュール評価の後）なので問題ない。
 import { codeBlock } from './source.js';
+import { openImageView } from './imageview.js';
 import { el } from './util.js';
 
 // ------------------------------------------------------------------ 数式
@@ -183,8 +184,18 @@ function imageNode(m, ctx) {
   const target = resolveUrl(m[2], ctx, { image: true });
   if (!target.href) return document.createTextNode(m[0]);
   const img = el('img', { src: target.href, alt, title: m[3] || null, loading: 'lazy' });
-  // 画像は大きいことが多いので、押したら原寸を別タブで開ける。
-  return el('a', { class: 'md-image', href: target.href, target: '_blank', rel: 'noreferrer' }, [img]);
+  // 押したらその場で拡大して見る。Ctrl / ⌘ / Shift 付きや中クリックなら、従来どおり別タブで開ける。
+  return el('a', {
+    class: 'md-image',
+    href: target.href,
+    target: '_blank',
+    rel: 'noreferrer',
+    onclick: (e) => {
+      if (e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
+      e.preventDefault();
+      openImageView(target.href, alt || m[3] || '');
+    },
+  }, [img]);
 }
 
 export function scrollToAnchor(root, anchor) {
