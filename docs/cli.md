@@ -45,7 +45,7 @@
 | --- | --- |
 | `blab ls [experiment] [--runs-dir DIR]` | run と group の一覧。group には summary の mean ± std を表示する |
 | `blab show <run / group のパス>` | meta、コメント、ドキュメントの一覧、summary、`resolved.yaml`（group は集計） |
-| `blab mv <run のパス> [--group NAME] [--runs-dir DIR]` | 所属 group を変える。`--group` を省略すると experiment の直下に戻す |
+| `blab mv <run のパス> [--group NAME] [--runs-dir DIR]` | 所属 group を変える。`--group` を省略すると experiment の直下に戻す。実行中の run は移せない |
 | `blab note <run / group / experiment のパス> [TEXT]` | コメント（`meta.json` の `notes`）を見る・書き換える。`TEXT` 省略で表示のみ。YAML の `comment` があれば run 作成時の初期値になる（[実験 YAML](experiments.md)） |
 | `blab doc add <node> <FILE...> [--as NAME] [-f]` | ノード（run / group / experiment）の直下に `*.md` や画像を添付する。`-` で標準入力から（既定の名前は `README.md`）。同名があれば `-f` が無い限り拒む |
 | `blab doc ls <node>` | 添付されたドキュメントの一覧 |

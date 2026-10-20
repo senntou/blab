@@ -99,7 +99,8 @@ class Run:
             raise BlabError("run.log_summary() にはマッピングを渡してください")
         with self._lock:
             self._summary.update(values)
-            write_json_atomic(self.path / SUMMARY_NAME, self._summary)
+            if self.path.is_dir():  # 移されたら書かない（_write_meta を参照）
+                write_json_atomic(self.path / SUMMARY_NAME, self._summary)
 
     @guard
     def log_artifact(self, source: Path | str, name: str | None = None) -> Path | None:
@@ -141,6 +142,10 @@ class Run:
     # ------------------------------------------------------------ 状態
 
     def _write_meta(self) -> None:
+        # 書き込み中に run ごと移された（blab mv）なら、元のパスにディレクトリを作り直さない。
+        # 作り直すと同じ run が 2 か所に分かれる。最初の 1 回（ディレクトリの作成直後）は必ずある。
+        if not self.path.is_dir():
+            return
         write_json_atomic(self.path / META_NAME, self._meta, indent=2)
 
     def start_heartbeat(self) -> None:

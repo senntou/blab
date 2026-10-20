@@ -222,6 +222,36 @@ class TestWrites:
         assert restore.status_code == 200
         assert "_trash" not in restore.json()["path"]
 
+    def test_a_running_run_cannot_be_moved(self, client, project):
+        """実行中に移すと、生きているプロセスが元の場所を作り直して run が 2 つに分かれる。"""
+        from blab.ids import isoformat, now
+        from blab.io import write_json_atomic
+        from blab.run import read_meta
+
+        path = next(r["path"] for r in client.get("/api/nodes").json()["rows"] if r["kind"] == "run")
+        run_dir = project.runs_dir() / path
+        meta = read_meta(run_dir)
+        meta.update(status="running", heartbeat_at=isoformat(now()))
+        write_json_atomic(run_dir / "meta.json", meta)
+
+        res = client.post(f"/api/nodes/{path}/group", json={"group": "_trash"})
+        assert res.status_code == 400
+        assert "実行中" in res.json()["detail"]
+        assert run_dir.is_dir()
+
+    def test_a_name_already_in_the_trash_gets_a_suffix(self, client, project):
+        """同じ名前の run が 2 つあっても、どちらもゴミ箱へ移せる。"""
+        import shutil
+
+        path = next(r["path"] for r in client.get("/api/nodes").json()["rows"] if r["kind"] == "run")
+        source = project.runs_dir() / path
+        (source.parent / "_trash").mkdir()
+        shutil.copytree(source, source.parent / "_trash" / source.name)
+
+        res = client.post(f"/api/nodes/{path}/group", json={"group": "_trash"})
+        assert res.status_code == 200
+        assert res.json()["path"] == f"cifar100/_trash/{source.name}_dup2"
+
 
 def test_files_endpoint_refuses_escape(client):
     assert client.get("/files/../../etc/passwd").status_code in (400, 404)

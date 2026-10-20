@@ -69,6 +69,21 @@ def test_params_json_is_gone(project):
     assert not (go(project).run.path / "params.json").exists()
 
 
+def test_a_run_moved_while_running_does_not_recreate_its_old_directory(project):
+    """実行中に移された run（stale 扱いで blab mv されたなど）は、終了時に元の場所を作り直さない。"""
+    write_component(
+        project,
+        "mover",
+        "import os\nimport blab\n\n@blab.entry\nclass Mover:\n"
+        "    def __init__(self):\n        pass\n"
+        "    def execute(self, run):\n"
+        "        os.rename(run.path, run.path.parent / ('moved_' + run.path.name))\n",
+    )
+    outcome = go(project, "experiment: x\nrun: {use: mover}\n")
+    old = outcome.run.path
+    assert not old.exists()
+    assert (old.parent / f"moved_{old.name}" / "meta.json").is_file()
+
 class TestStatus:
     def test_failure_is_recorded_with_a_traceback(self, project):
         write_component(

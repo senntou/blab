@@ -552,6 +552,12 @@ group の `summary.json` がある場合、そこに入るのは**その group �
                 "at": "2026-09-13T18:00:00+09:00"}}
 ```
 
+- 実行中（`status == "running"` で heartbeat が新しい）の run は移せない。動いているプロセスは元のパスに
+  書き続けるので、移すと元の場所に `meta.json` と `resolved.yaml` だけのディレクトリが作り直され、
+  同じ run が 2 か所に分かれる。`stale` のものは移せる。その場合も run は、自分のディレクトリが
+  無くなっていたら `meta.json` / `summary.json` / `resolved.yaml` を書かない
+- 移動先に同じ名前があるときは `<名前>_dup2`, `_dup3`, ... と空いている名前を使う
+
 ## 7. 再実行
 
 `blab run <run のパス>` は、その run の `resolved.yaml` と `components/` を読んで実行する。

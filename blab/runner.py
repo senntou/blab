@@ -89,6 +89,8 @@ def execute(
     resolved_path = path / resolved_mod.RESOLVED_NAME
 
     def record(*, provisional: bool) -> None:
+        if not path.is_dir():
+            return  # 実行中に run ごと移された。元の場所を作り直さない（Run._write_meta と同じ）
         resolved_mod.dump(
             resolved_path,
             resolved_mod.build_document(
