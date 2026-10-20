@@ -75,6 +75,7 @@ export const api = {
     return rootCache;
   },
   experiments: () => request(scoped('/experiments')),
+  trash: () => request(scoped('/trash')),
   nodes: (params = {}) => request(scoped(`/nodes${query(params)}`)),
 
   detail: (path) => request(scoped(`/nodes/${encodePath(path)}/detail`)),

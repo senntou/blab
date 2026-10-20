@@ -222,6 +222,20 @@ class TestWrites:
         assert restore.status_code == 200
         assert "_trash" not in restore.json()["path"]
 
+    def test_trash_lists_runs_per_experiment_with_absolute_paths(self, client, project):
+        """ゴミ箱ページは消さずに見せるだけ。`blab rm` に渡せるよう絶対パスを返す。"""
+        assert client.get("/api/trash").json()["experiments"] == []
+        path = next(r["path"] for r in client.get("/api/nodes").json()["rows"] if r["kind"] == "run")
+        trashed = client.post(f"/api/nodes/{path}/group", json={"group": "_trash"}).json()["path"]
+
+        doc = client.get("/api/trash").json()
+        [group] = doc["experiments"]
+        assert group["experiment"] == "cifar100"
+        assert group["path"] == "cifar100/_trash"
+        assert group["abs_path"] == f"{doc['runs_dir']}/cifar100/_trash"
+        assert [r["path"] for r in group["runs"]] == [trashed]
+        assert group["runs"][0]["abs_path"] == f"{doc['runs_dir']}/{trashed}"
+
     def test_a_running_run_cannot_be_moved(self, client, project):
         """実行中に移すと、生きているプロセスが元の場所を作り直して run が 2 つに分かれる。"""
         from blab.ids import isoformat, now
@@ -350,7 +364,7 @@ class TestStatic:
             "/js/app.js", "/js/api.js", "/js/config-tree.js", "/js/table.js",
             "/js/stats.js", "/js/prefs.js", "/js/util.js", "/js/chart.js",
             "/js/views/run.js", "/js/views/runs.js", "/js/views/group.js",
-            "/js/views/compare.js", "/js/views/component.js",
+            "/js/views/compare.js", "/js/views/component.js", "/js/views/trash.js",
             "/js/views/components.js", "/js/views/experiments.js",
             "/js/markdown.js", "/js/docs.js", "/js/views/projects.js",
             "/style.css",

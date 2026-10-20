@@ -51,7 +51,7 @@
 | `blab doc ls <node>` | 添付されたドキュメントの一覧 |
 | `blab doc show <node> [NAME]` | ドキュメントの本文を表示する。`NAME` 省略で先頭（`README.md` 優先） |
 | `blab doc rm <node> <NAME...>` | ドキュメントを消す |
-| `blab rm <run / group のパス> [-y]` | ディレクトリを削除する。確認があり、元に戻せない |
+| `blab rm <run / group のパス...> [-y]` | ディレクトリを削除する。複数渡せる。確認があり、元に戻せない |
 | `blab ui [--port 8420] [--host 127.0.0.1] [--open] [--runs-dir DIR]` | UI を起動する。プロジェクトの外でも起動でき、グローバル索引のプロジェクトを UI で切り替えられる（[UI](ui.md)） |
 
 `blab doc` の `<node>` には、パスのほか ULID・短 ID・ディレクトリ名も使える

@@ -216,6 +216,33 @@ def create_app(project: Project | None = None, runs_dir: Path | None = None) -> 
             rows.append(index_mod.row(node, view.runs_dir))
         return {"rows": rows, "scanned_at": view._at}
 
+    @api.get("/trash")
+    def api_trash(view: View = Depends(view_of)) -> dict:
+        """experiment ごとの `_trash` の中身。完全に消すのは CLI（`blab rm`）で、UI は見せるだけ。
+
+        `blab rm` に渡せるよう、パスは絶対パスも返す。
+        """
+        out = []
+        for experiment in view.nodes():
+            trash = next(
+                (c for c in experiment.children if c.path.name == index_mod.TRASH_GROUP), None
+            )
+            if trash is None:
+                continue
+            runs = trash.leaf_runs()
+            out.append(
+                {
+                    "experiment": index_mod.relpath(view.runs_dir, experiment.path),
+                    "name": experiment.name,
+                    "path": index_mod.relpath(view.runs_dir, trash.path),
+                    "abs_path": str(trash.path),
+                    "runs": [
+                        {**index_mod.row(r, view.runs_dir), "abs_path": str(r.path)} for r in runs
+                    ],
+                }
+            )
+        return {"runs_dir": str(view.runs_dir), "experiments": out}
+
     # --------------------------------------------------------------- run
 
     @api.get("/nodes/{path:path}/detail")

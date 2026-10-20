@@ -12,6 +12,7 @@ import { runsView } from './views/runs.js';
 import { runView } from './views/run.js';
 import { groupView } from './views/group.js';
 import { compareView } from './views/compare.js';
+import { trashView } from './views/trash.js';
 import { componentsView } from './views/components.js';
 import { componentView } from './views/component.js';
 import { projectHref, projectsView } from './views/projects.js';
@@ -49,6 +50,7 @@ function parseRoute() {
   if (head === 'run') return { name: 'run', path, query };
   if (head === 'group') return { name: 'group', path, query };
   if (head === 'compare') return { name: 'compare', query };
+  if (head === 'trash') return { name: 'trash', query };
   if (head === 'components') return { name: 'components', query };
   if (head === 'component') return { name: 'component', path, query };
   return { name: 'experiments', query };
@@ -57,7 +59,8 @@ function parseRoute() {
 function syncNav(route) {
   for (const a of document.querySelectorAll('.topbar nav a')) {
     const alias = (route.name === 'runs' && a.dataset.route === 'experiments')
-      || (route.name === 'component' && a.dataset.route === 'components');
+      || (route.name === 'component' && a.dataset.route === 'components')
+      || (route.name === 'group' && route.path.split('/').includes('_trash') && a.dataset.route === 'trash');
     a.classList.toggle('on', a.dataset.route === route.name || alias);
   }
 }
@@ -75,6 +78,7 @@ function pageTitle(r) {
   if (r.name === 'run' || r.name === 'group') head = parts.length > 1 ? `${leaf} · ${parts[0]}` : leaf;
   else if (r.name === 'runs' || r.name === 'component') head = leaf;
   else if (r.name === 'compare') head = '比較';
+  else if (r.name === 'trash') head = 'ゴミ箱';
   else if (r.name === 'components') head = 'Components';
   return head ? `${head} - blab` : 'blab';
 }
@@ -96,6 +100,7 @@ async function route() {
     else if (r.name === 'run') current = await runView(ctx, r.path);
     else if (r.name === 'group') current = await groupView(ctx, r.path);
     else if (r.name === 'compare') current = await compareView(ctx, r.query);
+    else if (r.name === 'trash') current = await trashView(ctx);
     else if (r.name === 'components') current = await componentsView(ctx);
     else if (r.name === 'component') current = await componentView(ctx, decodeURIComponent(r.path));
     else current = await experimentsView(ctx);

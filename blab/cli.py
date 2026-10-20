@@ -628,18 +628,20 @@ def cmd_rm(args) -> None:
 
     from .run import read_meta
 
-    target = Path(args.target).resolve()
-    meta = read_meta(target)
-    if meta is None:
-        _fail(f"{target} はノードではありません（meta.json がない）")
-        return
+    targets = [Path(t).resolve() for t in args.targets]
+    for target in targets:
+        if read_meta(target) is None:
+            _fail(f"{target} はノードではありません（meta.json がない）")
+            return
     if not args.yes:
-        answer = input(f"{target} を削除します。よろしいですか [y/N]: ")
+        listing = "\n".join(f"  {t}" for t in targets)
+        answer = input(f"次の {len(targets)} 件を削除します。よろしいですか [y/N]:\n{listing}\n> ")
         if answer.strip().lower() not in ("y", "yes"):
             print("[blab] やめました")
             return
-    shutil.rmtree(target)
-    print(f"[blab] 削除しました: {target}")
+    for target in targets:
+        shutil.rmtree(target)
+        print(f"[blab] 削除しました: {target}")
 
 
 # ------------------------------------------------------------------------- main
@@ -744,7 +746,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_doc)
 
     p = sub.add_parser("rm", help="run / group を削除する")
-    p.add_argument("target")
+    p.add_argument("targets", nargs="+", metavar="target")
     p.add_argument("-y", "--yes", action="store_true", help="確認しない")
     p.set_defaults(func=cmd_rm)
 

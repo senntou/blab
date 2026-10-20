@@ -3805,3 +3805,16 @@ table.compare-table td.best { background: var(--best); }
 .focus-chart .chart-svg {
   cursor: crosshair;
 }
+
+/* --- ゴミ箱 ------------------------------------------------------------- */
+
+.trash-table .trash-dir {
+  font-size: 11.5px;
+  margin-top: 2px;
+}
+.trash-table td {
+  vertical-align: top;
+}
+.panel .path-row + .table-scroll {
+  margin-top: 12px;
+}
