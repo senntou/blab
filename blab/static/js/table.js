@@ -34,10 +34,10 @@ function cellValue(row, key) {
   return undefined;
 }
 
-function discoverColumns(rows) {
-  const config = new Set();
-  const summary = new Set();
-  for (const row of rows) {
+function discoverColumns(rows, available = null) {
+  const config = new Set(available ? available.config : []);
+  const summary = new Set(available ? available.summary : []);
+  for (const row of available ? [] : rows) {
     for (const key of Object.keys(row.config || {})) config.add(key);
     for (const key of Object.keys(row.summary || {})) summary.add(key);
     for (const key of Object.keys(row.aggregate || {})) summary.add(key);
@@ -49,15 +49,29 @@ function discoverColumns(rows) {
   ];
 }
 
-/** 既定で出す列。構成の列は多くなりがちなので、component の版だけを最初から出す。 */
+/**
+ * 既定で出す列。summary は数百になることがあり、全部出すと表が数十万セルになって固まるので
+ * 既定では出さない（列の一覧から足す）。構成は component の版だけを最初から出す。
+ */
 function defaultVisible(columns) {
   return columns
     .filter((c) => {
+      if (c.kind === 'summary') return false;
       if (c.kind !== 'config') return true;
       // `dataset` は版、`dataset.n` は引数。既定では版だけ。
       return !c.label.includes('.');
     })
     .map((c) => c.key);
+}
+
+// 列の表示の保存先。summary を全部出していた頃の既定がそのまま保存されている表が多いので、
+// 既定を変えたときに名前を変えて読み捨てた（旧: `.columns`）。
+const COLUMNS_PREF = 'cols';
+
+/** `prefKey` の表が出す列のうち、値をサーバから取る必要があるもの（api.table の columns）。 */
+export function tableColumns(prefKey) {
+  return (getPref(`${prefKey}.${COLUMNS_PREF}`, null) || [])
+    .filter((k) => k.startsWith('summary.') || k.startsWith('config.'));
 }
 
 function renderCell(row, column) {
@@ -102,17 +116,21 @@ function compare(a, b) {
 }
 
 /**
- * @param {Array} rows   /api/nodes の rows
- * @param {object} opts  {ctx, prefKey, onChanged}
+ * @param {Array} rows   /api/nodes の rows（または api.table の rows）
+ * @param {object} opts  {ctx, prefKey, onChanged, table}
  *   onChanged: 削除・移動が成功した後に呼ぶ再読み込み用コールバック（呼び出し元が rows を取り直す）。
+ *   table: api.table で取った場合の {res, reload}。rows には出している列の値しか無いので、
+ *     列の一覧は res.columns から作り、値の無い列（res.loaded に無いもの）を出したら
+ *     reload(列) で取り直す。
  */
-export function nodeTable(rows, { ctx = null, prefKey = 'table', onChanged = null } = {}) {
+export function nodeTable(rows, { ctx = null, prefKey = 'table', onChanged = null, table = null } = {}) {
   const wrap = el('div', { class: 'table-wrap' });
-  const columns = discoverColumns(rows);
+  const columns = discoverColumns(rows, table ? table.res.columns : null);
+  let loaded = table ? new Set(table.res.loaded) : null;
   const known = new Set(columns.map((c) => c.key));
 
   let visible = new Set(
-    (getPref(`${prefKey}.columns`, null) || defaultVisible(columns)).filter((k) => known.has(k)),
+    (getPref(`${prefKey}.${COLUMNS_PREF}`, null) || defaultVisible(columns)).filter((k) => known.has(k)),
   );
   if (!visible.size) visible = new Set(defaultVisible(columns));
 
@@ -333,6 +351,22 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table', onChanged = nul
   }
 
   // 操作欄は 1 度だけ作る。打つたびに作り直すと入力欄のフォーカスが外れ、列の一覧も閉じてしまう。
+  // 値を持っていない列を出したら取り直す。続けて何列も選んだときに 1 回で済むよう少し待つ。
+  let fetchTimer = null;
+  function fetchColumns() {
+    clearTimeout(fetchTimer);
+    fetchTimer = setTimeout(async () => {
+      try {
+        const res = await table.reload(tableColumns(prefKey));
+        rows = res.rows;
+        loaded = new Set(res.loaded);
+      } catch (e) {
+        notify(`列の値を読めませんでした: ${e.message}`);
+      }
+      draw();
+    }, 300);
+  }
+
   function drawControls() {
     actions = ctx ? el('div', { class: 'table-actions' }) : null;
     controls.append(...[search, actions, columnPicker()].filter(Boolean));
@@ -424,7 +458,12 @@ export function nodeTable(rows, { ctx = null, prefKey = 'table', onChanged = nul
               onchange: (e) => {
                 if (e.target.checked) visible.add(column.key);
                 else visible.delete(column.key);
-                setPref(`${prefKey}.columns`, [...visible]);
+                setPref(`${prefKey}.${COLUMNS_PREF}`, [...visible]);
+                const valued = column.kind === 'summary' || column.kind === 'config';
+                if (e.target.checked && loaded && valued && !loaded.has(column.key)) {
+                  fetchColumns();
+                  return;
+                }
                 draw();
               },
             }),

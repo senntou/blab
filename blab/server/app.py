@@ -195,13 +195,7 @@ def create_app(project: Project | None = None, runs_dir: Path | None = None) -> 
             )
         return {"experiments": out}
 
-    @api.get("/nodes")
-    def api_nodes(
-        experiment: str | None = None,
-        kind: str | None = Query(default=None, pattern="^(run|group)$"),
-        include_trash: bool = False,
-        view: View = Depends(view_of),
-    ) -> dict:
+    def node_rows(view: View, experiment: str | None, kind: str | None, include_trash: bool):
         rows = []
         for node in view.all():
             if node.kind not in (KIND_RUN, KIND_GROUP):
@@ -214,7 +208,35 @@ def create_app(project: Project | None = None, runs_dir: Path | None = None) -> 
             if experiment and not relative.startswith(experiment):
                 continue
             rows.append(index_mod.row(node, view.runs_dir))
+        return rows
+
+    @api.get("/nodes")
+    def api_nodes(
+        experiment: str | None = None,
+        kind: str | None = Query(default=None, pattern="^(run|group)$"),
+        include_trash: bool = False,
+        view: View = Depends(view_of),
+    ) -> dict:
+        rows = node_rows(view, experiment, kind, include_trash)
         return {"rows": rows, "scanned_at": view._at}
+
+    @api.post("/table")
+    def api_table(
+        experiment: str | None = Body(default=None),
+        kind: str | None = Body(default=None, pattern="^(run|group)$"),
+        include_trash: bool = Body(default=False),
+        columns: list[str] = Body(default=[]),
+        view: View = Depends(view_of),
+    ) -> dict:
+        """run 表のための `/nodes`。値は表に出している列（`columns`）の分だけ返す。
+
+        summary は数百、構成の引数は数十の列になり、全部の値を送ると run が数百あるだけで
+        数 MB になる。列の一覧は `columns` に別に返し、表は列を足したときに取り直す。
+        列名は数百になりうるので、クエリではなく本文で受ける。
+        """
+        return table_rows(node_rows(view, experiment, kind, include_trash), columns) | {
+            "scanned_at": view._at
+        }
 
     @api.get("/trash")
     def api_trash(view: View = Depends(view_of)) -> dict:
@@ -583,6 +605,43 @@ def _baked_components(run_path: Path, resolved: dict | None) -> list[dict]:
             }
         )
     return out
+
+
+def table_rows(rows: list[dict], columns: list[str]) -> dict:
+    """`rows` の summary・集計・構成を `columns`（`summary.<名前>` / `config.<名前>`）に絞る。
+
+    構成のうち component の版（`.` を含まない名前）は、表が既定で出す列なので常に残す。
+    notes は表では使わないので落とす。
+    """
+    summary_keys: set[str] = set()
+    config_keys: set[str] = set()
+    for r in rows:
+        summary_keys.update(r.get("summary") or {})
+        summary_keys.update(r.get("aggregate") or {})
+        config_keys.update(r.get("config") or {})
+    summary_want = {c[len("summary.") :] for c in columns if c.startswith("summary.")}
+    config_want = {c[len("config.") :] for c in columns if c.startswith("config.")}
+    config_want |= {k for k in config_keys if "." not in k}
+
+    def pick(values: dict | None, wanted: set[str]) -> dict:
+        return {k: v for k, v in (values or {}).items() if k in wanted}
+
+    out = []
+    for r in rows:
+        slim = {k: v for k, v in r.items() if k != "notes"}
+        slim["summary"] = pick(r.get("summary"), summary_want)
+        slim["config"] = pick(r.get("config"), config_want)
+        if "aggregate" in r:
+            slim["aggregate"] = pick(r["aggregate"], summary_want)
+        out.append(slim)
+    return {
+        "rows": out,
+        "columns": {"summary": sorted(summary_keys), "config": sorted(config_keys)},
+        "loaded": sorted(
+            [f"summary.{k}" for k in summary_want & summary_keys]
+            + [f"config.{k}" for k in config_want & config_keys]
+        ),
+    }
 
 
 def scan_cache_path(runs_dir: Path) -> Path:

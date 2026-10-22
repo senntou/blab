@@ -7,6 +7,7 @@ import { dump, flatten } from './dom-shim.mjs';
 
 const { argsTable, configTree, flattenTree } = await import('../../blab/static/js/config-tree.js');
 const { nodeTable } = await import('../../blab/static/js/table.js');
+const { setPref } = await import('../../blab/static/js/prefs.js');
 
 const RESOLVED = {
   schema_version: 2,
@@ -136,6 +137,10 @@ function tokens(node) {
     },
   ];
 
+  // summary の列は既定では出ない（数百になりうるため）。
+  assert.ok(!tokens(nodeTable(rows, { prefKey: 'test-default' })).includes('± '), 'summary は既定で出ない');
+
+  setPref('test-fold.cols', ['_name', '_status', 'summary.acc', 'config.model']);
   const table = nodeTable(rows, { prefKey: 'test-fold' });
   let text = tokens(table);
 
@@ -161,6 +166,37 @@ function tokens(node) {
   text = tokens(table);
   assert.ok(text.includes('fold0'), '開くと group 配下の run が折りたたみ行として出る');
   assert.ok(text.includes('.status.status-running'), '開いた子 run の状態が出る');
+
+  // api.table の rows は出している列の値しか持たない。列の一覧は res.columns から作り、
+  // 値の無い列を出したらそのとき取り直す。
+  const slim = rows.map((r) => ({ ...r, summary: {}, aggregate: r.aggregate ? {} : undefined }));
+  const asked = [];
+  const lazy = nodeTable(slim, {
+    prefKey: 'test-lazy',
+    table: {
+      res: { columns: { summary: ['acc'], config: ['model', 'model.k', 'run'] }, loaded: ['config.model', 'config.run'] },
+      reload: async (columns) => {
+        asked.push(columns);
+        return { rows, loaded: ['config.model', 'config.run', 'summary.acc'] };
+      },
+    },
+  });
+  const accOption = (function walk(node) {
+    if (!node) return null;
+    if (String(node.className || '').includes('col-opt') && tokens(node).includes('acc')) return node;
+    for (const child of node.children || []) {
+      const hit = walk(child);
+      if (hit) return hit;
+    }
+    return null;
+  })(lazy);
+  assert.ok(accOption, '値が無くても summary の列は列の一覧に出る');
+  const box = accOption.children[0];
+  box.checked = true;
+  box.listeners.change[0]({ target: box });
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.deepEqual(asked.map((c) => [...c].sort()), [['config.model', 'config.run', 'summary.acc']], '値の無い列を出すと、出している列で取り直す');
+  assert.ok(tokens(lazy).includes('0.9'), '取り直した値が表に出る');
 
   console.log('table: ok');
 }

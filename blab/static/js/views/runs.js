@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import { docsMark, docsPanel } from '../docs.js';
 import { icon } from '../icons.js';
-import { nodeTable } from '../table.js';
+import { nodeTable, tableColumns } from '../table.js';
 import { el, clear, tabs } from '../util.js';
 
 export async function runsView(ctx, path) {
@@ -12,7 +12,7 @@ export async function runsView(ctx, path) {
 
   async function load() {
     const [res, info] = await Promise.all([
-      api.nodes({ experiment: path }),
+      api.table({ experiment: path, columns: tableColumns(`runs.${path}`) }),
       // ドキュメントが読めなくても一覧は出す。
       api.docs(path).catch(() => ({ docs: [], notes: '' })),
     ]);
@@ -40,7 +40,12 @@ export async function runsView(ctx, path) {
             icon: 'flask',
             count: rows.filter((r) => r.kind === 'run').length,
             render: () => (rows.length
-              ? nodeTable(rows, { ctx, prefKey: `runs.${path}`, onChanged: load })
+              ? nodeTable(rows, {
+                ctx,
+                prefKey: `runs.${path}`,
+                onChanged: load,
+                table: { res, reload: (columns) => api.table({ experiment: path, columns }) },
+              })
               : el('p', { class: 'muted pad', text: 'run がありません' })),
           },
           {

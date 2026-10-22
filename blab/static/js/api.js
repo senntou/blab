@@ -77,6 +77,8 @@ export const api = {
   experiments: () => request(scoped('/experiments')),
   trash: () => request(scoped('/trash')),
   nodes: (params = {}) => request(scoped(`/nodes${query(params)}`)),
+  // run 表用。値は表に出している列（columns）の分だけ返る（列名は数百になりうるので本文で送る）。
+  table: (body = {}) => request(scoped('/table'), { method: 'POST', body }),
 
   detail: (path) => request(scoped(`/nodes/${encodePath(path)}/detail`)),
   metrics: (path, params = {}) => request(scoped(`/nodes/${encodePath(path)}/metrics${query(params)}`)),

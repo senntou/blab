@@ -76,6 +76,36 @@ class TestNodes:
         assert rows and all(r["kind"] == "group" for r in rows)
 
 
+class TestTable:
+    """run 表用。値は出している列の分だけ返す（run が数百あると全部で数 MB になるため）。"""
+
+    def test_returns_only_requested_values(self, rich):
+        doc = rich.post("/api/table", json={"columns": ["config.model.k"]}).json()
+        run = next(r for r in doc["rows"] if r["kind"] == "run")
+        assert run["summary"] == {}
+        # component の版は表が既定で出すので常に返す。
+        assert run["config"]["model"].startswith("resnet18@")
+        assert run["config"]["model.k"] == 100
+        assert "run.epochs" not in run["config"]
+        assert "notes" not in run
+        group = next(r for r in doc["rows"] if r["kind"] == "group")
+        assert group["aggregate"] == {}
+        # 列の一覧は値と別に全部返す。
+        assert "acc" in doc["columns"]["summary"]
+        assert "run.epochs" in doc["columns"]["config"]
+        assert "config.model.k" in doc["loaded"]
+
+    def test_requested_summary_comes_with_aggregate(self, rich):
+        doc = rich.post(
+            "/api/table", json={"experiment": "cifar100", "columns": ["summary.acc"]}
+        ).json()
+        run = next(r for r in doc["rows"] if r["kind"] == "run")
+        assert run["summary"]["acc"] == pytest.approx(0.6)
+        group = next(r for r in doc["rows"] if r["kind"] == "group")
+        assert group["aggregate"]["acc"]["n"] == 3
+        assert "summary.acc" in doc["loaded"]
+
+
 class TestRunDetail:
     def test_includes_everything_the_view_needs(self, client):
         path = next(r["path"] for r in client.get("/api/nodes").json()["rows"] if r["kind"] == "run")
