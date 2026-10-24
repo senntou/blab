@@ -2883,7 +2883,10 @@ code.block {
 .tree-build-label {
   font-family: var(--mono);
   color: var(--text);
-  overflow-wrap: anywhere;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 /* 縦の連結線 + 各子ノードへの小さな枝（org chart 風）。 */
 .tree-children {
@@ -3007,6 +3010,26 @@ table.args th {
 table.args tr:last-child th,
 table.args tr:last-child td { border-bottom: none; }
 .arg-origin { width: 1%; white-space: nowrap; }
+
+/* 長い値（ファイルの一覧など）は数行に畳む。 */
+.arg-long-body { overflow-wrap: anywhere; }
+.arg-long.is-clamped .arg-long-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.arg-long-toggle {
+  margin-top: 3px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+.arg-long-toggle:hover { text-decoration: underline; }
 
 .origin {
   font-size: 10px;

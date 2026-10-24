@@ -94,6 +94,28 @@ export function renderValue(value) {
   return el('span', {}, ['{', wrap, '}']);
 }
 
+// これより長い値（JSON にした文字数）は、引数表では数行に畳んで「全部表示」で開く。
+const LONG_VALUE = 160;
+
+/** 引数表の値セル。長い値（ファイルの一覧など）は畳んでおき、押すと全部出す。 */
+function argValue(value) {
+  const rendered = renderValue(value);
+  if (JSON.stringify(value ?? null).length <= LONG_VALUE) return rendered;
+  const box = el('div', { class: 'arg-long is-clamped' }, [el('div', { class: 'arg-long-body' }, [rendered])]);
+  const toggle = el('button', {
+    type: 'button',
+    class: 'arg-long-toggle',
+    text: '全部表示',
+    onclick: (e) => {
+      e.stopPropagation();
+      const clamped = box.classList.toggle('is-clamped');
+      toggle.textContent = clamped ? '全部表示' : '畳む';
+    },
+  });
+  box.append(toggle);
+  return box;
+}
+
 export function argsTable(args, argsFrom, { title = null } = {}) {
   const names = Object.keys(args || {}).sort();
   if (!names.length) {
@@ -107,7 +129,7 @@ export function argsTable(args, argsFrom, { title = null } = {}) {
     body.append(
       el('tr', { class: origin ? `arg-${origin}` : '' }, [
         el('th', { text: name }),
-        el('td', {}, [renderValue(args[name])]),
+        el('td', {}, [argValue(args[name])]),
         el('td', { class: 'arg-origin' }, [
           origin
             ? el('span', {
@@ -154,15 +176,27 @@ function nodeHeader(name, node, path, { onSelect } = {}) {
   return head;
 }
 
+// build ラベルに出す 1 つの値の長さの上限。超えた分は `…` にする（全文は title で見られる）。
+const LABEL_VALUE = 40;
+
+function shorten(text, limit) {
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
 /** build ごとの短い見分けラベル。build 間で値が違う引数だけを拾って `k=v` にする。 */
-function buildLabel(build, index, builds) {
+function buildLabel(build, index, builds, { full = false } = {}) {
   const args = (build && build.args) || {};
   const varying = Object.keys(args).filter((key) => {
     const values = new Set(builds.map((b) => JSON.stringify((b.args || {})[key])));
     return values.size > 1;
   });
   if (!varying.length) return `build #${index}`;
-  return varying.map((key) => `${key}=${JSON.stringify(args[key])}`).join(', ');
+  return varying
+    .map((key) => {
+      const text = JSON.stringify(args[key]);
+      return `${key}=${full ? text : shorten(text, LABEL_VALUE)}`;
+    })
+    .join(', ');
 }
 
 /**
@@ -185,7 +219,11 @@ function renderBuilds(node, path, options) {
         },
       }, [
         el('span', { class: 'tree-build-index', text: `#${i}` }),
-        el('span', { class: 'tree-build-label', text: buildLabel(build, i, builds) }),
+        el('span', {
+          class: 'tree-build-label',
+          title: buildLabel(build, i, builds, { full: true }),
+          text: buildLabel(build, i, builds),
+        }),
       ]),
     );
   });
