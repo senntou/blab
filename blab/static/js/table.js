@@ -74,6 +74,18 @@ export function tableColumns(prefKey) {
     .filter((k) => k.startsWith('summary.') || k.startsWith('config.'));
 }
 
+/** group 行の状態欄: run の本数と、配下の実行中の本数。 */
+export function groupStatus(row) {
+  return el('span', { class: 'group-status' }, [
+    el('span', { class: 'muted', text: `${row.n_runs} runs` }),
+    row.n_running
+      ? el('span', { class: 'status status-running', title: `配下で実行中の run が ${row.n_running} 本` }, [
+        statusDot(), el('span', { text: `${row.n_running} 実行中` }),
+      ])
+      : null,
+  ]);
+}
+
 function renderCell(row, column) {
   const value = cellValue(row, column.key);
 
@@ -86,7 +98,7 @@ function renderCell(row, column) {
     ]);
   }
   if (column.kind === 'status') {
-    if (row.kind === 'group') return el('span', { class: 'muted', text: `${row.n_runs} runs` });
+    if (row.kind === 'group') return groupStatus(row);
     return el('span', { class: `status status-${value}` }, [statusDot(value), el('span', { text: value })]);
   }
   if (column.kind === 'time') return el('span', { text: value ? fmtRelative(value) : '-' });

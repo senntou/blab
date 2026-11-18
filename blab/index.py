@@ -459,12 +459,28 @@ def row(node: Node, root: Path) -> dict:
                 out[key] = node.meta[key]
     else:
         stats = node.aggregate()
-        out["n_runs"] = len(node.leaf_runs())
+        runs = node.leaf_runs()
+        out["n_runs"] = len(runs)
+        out["n_running"] = sum(1 for r in runs if r.status == STATUS_RUNNING)
         out["aggregate"] = {
             k: {"n": s.n, "mean": s.mean, "std": s.std, "min": s.min, "max": s.max}
             for k, s in stats.items()
         }
     return out
+
+
+def live_row(node: Node, root: Path) -> dict:
+    """実行中の run の 1 行分。一覧から飛ぶための軽い形（summary を読まない）。"""
+    path = relpath(root, node.path)
+    parts = path.split("/")
+    return {
+        "path": path,
+        "experiment": parts[0],
+        "group": "/".join(parts[1:-1]),
+        "name": node.name,
+        "id": node.id,
+        "created_at": node.meta.get("created_at"),
+    }
 
 
 def relpath(root: Path, path: Path) -> str:

@@ -27,7 +27,7 @@ from ..errors import BlabError
 from ..io import read_json
 from ..project import PROJECT_MARKER, GlobalIndex, Project, blab_home
 from ..resolved import FAST_YAML, RESOLVED_NAME, iter_components, load as load_resolved
-from ..run import COMPONENTS_DIR, KIND_GROUP, KIND_RUN
+from ..run import COMPONENTS_DIR, KIND_GROUP, KIND_RUN, STATUS_RUNNING
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -172,28 +172,39 @@ def create_app(project: Project | None = None, runs_dir: Path | None = None) -> 
             "project_root": str(view.project.root),
             "runs_dir": str(view.runs_dir),
             "n_runs": len(runs),
-            "n_running": sum(1 for n in runs if n.status in ("running", "stale")),
+            "n_running": sum(1 for n in runs if n.status == STATUS_RUNNING),
             "scanned_at": view._at,
         }
 
     @api.get("/experiments")
     def api_experiments(view: View = Depends(view_of)) -> dict:
+        """experiment の一覧と、実行中の run の一覧（そこへ一気に飛ぶため）。
+
+        「実行中」は heartbeat が生きているものだけ。`running` のまま heartbeat が途絶えたもの
+        （`stale`。SIGKILL・OOM・segfault・コンテナごと落ちた等で終了を書けなかった run）は、
+        実際にはほぼ死んでいるので数えない。
+        """
         out = []
+        live = []
         for node in view.nodes():
             runs = [r for r in node.leaf_runs() if not index_mod.is_trashed(view.runs_dir, r.path)]
+            running = [r for r in runs if r.status == STATUS_RUNNING]
+            live.extend(running)
             out.append(
                 {
                     "path": index_mod.relpath(view.runs_dir, node.path),
                     "name": node.name,
                     "docs": node.doc_names,
                     "n_runs": len(runs),
-                    "n_running": sum(1 for r in runs if r.status in ("running", "stale")),
+                    "n_running": len(running),
                     "updated_at": max(
                         (r.meta.get("created_at") or "" for r in runs), default=None
                     ),
                 }
             )
-        return {"experiments": out}
+        rows = [index_mod.live_row(r, view.runs_dir) for r in live]
+        rows.sort(key=lambda r: r["created_at"] or "", reverse=True)
+        return {"experiments": out, "live": rows}
 
     def node_rows(view: View, experiment: str | None, kind: str | None, include_trash: bool):
         rows = []

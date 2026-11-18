@@ -3395,6 +3395,31 @@ table.summary-table td { font-family: var(--mono); }
 table.experiments-table td.col-num,
 table.experiments-table th.col-num { text-align: right; }
 table.experiments-table .is-running { color: var(--running); font-weight: 600; }
+
+/* 実行中の run の一覧（Experiments の上） */
+.live-panel > h2 { display: flex; align-items: center; gap: 8px; }
+.live-panel .status-running .status-dot { animation: pulse 1.6s ease-in-out infinite; }
+.live-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.live-item {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 5px 6px;
+  border-radius: 6px;
+}
+.live-item:hover { background: var(--panel-2); }
+.live-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-weight: 600; }
+.live-name > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-where { font-size: 12px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-where a { color: var(--text-2); }
+.live-where .sep { margin: 0 4px; }
+.live-time { font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .live-item { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+.group-status { display: inline-flex; align-items: center; gap: 10px; }
+.group-summary { margin: 0 0 12px; }
 table.nodes tbody tr.row-link { cursor: pointer; }
 
 /* --- group / 逆引き ----------------------------------------------------- */

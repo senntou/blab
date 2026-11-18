@@ -1,11 +1,12 @@
 // Experiment 一覧 — run 数 / 実行中の数 / 最終更新。数が増えても読めるよう行で並べる。
+// 上に実行中の run の一覧を出し、experiment をたどらずにそこへ飛べるようにする。
 
 import { api } from '../api.js';
 import { docsMark } from '../docs.js';
 import { countLabel, filterBox, rankByQuery } from '../filter.js';
-import { icon } from '../icons.js';
+import { icon, statusDot } from '../icons.js';
 import { getPref, setPref } from '../prefs.js';
-import { el, clear, fmtRelative, fmtTime } from '../util.js';
+import { el, clear, fmtDuration, fmtRelative, fmtTime } from '../util.js';
 
 const COLUMNS = [
   { key: 'name', label: 'experiment' },
@@ -40,15 +41,59 @@ function cell(e, column) {
   return el('span', { class: 'num', text: String(e[column.key]) });
 }
 
+function elapsedSince(iso) {
+  const ms = iso ? new Date(iso).getTime() : NaN;
+  return Number.isNaN(ms) ? undefined : Math.max(0, (Date.now() - ms) / 1000);
+}
+
+function liveItem(r) {
+  const where = [
+    el('a', { href: `#/e/${encodeURIComponent(r.experiment)}`, text: r.experiment }),
+  ];
+  if (r.group) {
+    where.push(
+      el('span', { class: 'sep', text: '/' }),
+      el('a', { href: `#/group/${r.experiment}/${r.group}`, text: r.group }),
+    );
+  }
+  return el('li', { class: 'live-item' }, [
+    el('a', { class: 'live-name', href: `#/run/${r.path}`, title: r.path }, [
+      el('span', { class: 'status status-running' }, [statusDot()]),
+      el('span', { text: r.name || r.path.split('/').pop() }),
+    ]),
+    el('span', { class: 'live-where' }, where),
+    el('span', {
+      class: 'live-time',
+      title: `開始 ${fmtTime(r.created_at)}`,
+      text: `${fmtDuration(elapsedSince(r.created_at))} 経過`,
+    }),
+  ]);
+}
+
+/** 実行中（heartbeat が生きている）の run の一覧。無ければ出さない。 */
+function livePanel(live) {
+  if (!live.length) return null;
+  return el('section', { class: 'panel live-panel' }, [
+    el('h2', {}, [
+      el('span', { class: 'status status-running' }, [statusDot()]),
+      el('span', { text: '実行中' }),
+      el('span', { class: 'pill pill-running', text: String(live.length) }),
+    ]),
+    el('ul', { class: 'live-list' }, live.map(liveItem)),
+  ]);
+}
+
 export async function experimentsView() {
   const node = el('div', { class: 'view' });
   let running = 0;
 
   async function load() {
-    const { experiments } = await api.experiments();
+    const { experiments, live = [] } = await api.experiments();
     running = experiments.reduce((n, e) => n + e.n_running, 0);
     clear(node);
     node.append(el('h1', { text: 'Experiments' }));
+    const panel = livePanel(live);
+    if (panel) node.append(panel);
 
     if (!experiments.length) {
       node.append(

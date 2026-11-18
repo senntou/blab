@@ -6,7 +6,7 @@ import { docsMark, docsPanel } from '../docs.js';
 import { filteredTable } from '../filter.js';
 import { icon } from '../icons.js';
 import { metricsOverlay } from '../overlay.js';
-import { nodeTable } from '../table.js';
+import { groupStatus, nodeTable } from '../table.js';
 import { el, clear, fmtNumber, tabs } from '../util.js';
 
 function aggregateTable(detail) {
@@ -85,7 +85,7 @@ export async function groupView(ctx, path) {
         el('a', { href: `#/e/${encodeURIComponent(experiment)}` }, [el('span', { text: experiment })]),
       ]),
       el('h1', {}, [icon('layers', { size: 20 }), el('span', { text: detail.name || path.split('/').pop() }), docsMark((detail.docs || []).map((d) => d.name))]),
-      el('p', { class: 'muted', text: `${detail.n_runs} 本の run` }),
+      el('p', { class: 'group-summary' }, [groupStatus(detail)]),
       aggregateTable(detail),
     );
 

@@ -50,6 +50,60 @@ class TestStatus:
         assert doc["experiments"][0]["n_runs"] == 1
 
 
+def _set_running(path, heartbeat_at):
+    import json
+
+    meta = json.loads((path / "meta.json").read_text())
+    meta["status"] = "running"
+    meta["heartbeat_at"] = heartbeat_at
+    (path / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+
+
+class TestLive:
+    """heartbeat が生きている run だけを「実行中」と数える。途絶えたもの（stale）は数えない。"""
+
+    def _runs(self, project):
+        from blab.index import scan, walk
+
+        runs = [n for n in walk(scan(project.runs_dir())) if n.kind == "run"]
+        grouped = [r for r in runs if r.path.parent.name == "cv5"]
+        return runs, grouped
+
+    def test_stale_runs_are_not_counted_as_running(self, rich, project):
+        from datetime import datetime, timezone
+
+        _, grouped = self._runs(project)
+        _set_running(grouped[0].path, datetime.now(timezone.utc).isoformat())
+        _set_running(grouped[1].path, "2020-01-01T00:00:00+09:00")
+
+        doc = rich.get("/api/experiments").json()
+        exp = doc["experiments"][0]
+        assert exp["n_running"] == 1
+        assert [r["path"] for r in doc["live"]] == [
+            str(grouped[0].path.relative_to(project.runs_dir()))
+        ]
+        alive = doc["live"][0]
+        assert alive["experiment"] == "cifar100" and alive["group"] == "cv5"
+        assert "summary" not in alive  # 一覧用の軽い行
+
+        status = rich.get("/api/status").json()
+        assert status["n_running"] == 1
+
+    def test_group_rows_count_running_runs(self, rich, project):
+        from datetime import datetime, timezone
+
+        _, grouped = self._runs(project)
+        _set_running(grouped[0].path, datetime.now(timezone.utc).isoformat())
+        rows = rich.get("/api/nodes").json()["rows"]
+        group = next(r for r in rows if r["kind"] == "group")
+        assert (group["n_runs"], group["n_running"]) == (3, 1)
+
+    def test_nothing_live(self, client):
+        doc = client.get("/api/experiments").json()
+        assert doc["live"] == []
+        assert doc["experiments"][0]["n_running"] == 0
+
+
 class TestNodes:
     def test_columns_come_from_resolved_yaml(self, client):
         row = next(r for r in client.get("/api/nodes").json()["rows"] if r["kind"] == "run")

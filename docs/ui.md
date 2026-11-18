@@ -58,6 +58,10 @@ metrics のグラフ（run 詳細・group の重ね描き・比較）の右上�
 ### Experiments
 
 experiment ごとの run 数、実行中の run 数、最終更新日時の表。列でソートでき、名前で絞り込める。
+「実行中」に数えるのは heartbeat が生きている run だけで、`stale`（下記「表示の更新」）は数えない。
+
+表の上には実行中の run の一覧が出て、experiment をたどらずに各 run（とその experiment・group）へ
+飛べる。実行中の run が無ければ出ない。
 ドキュメントのある experiment / group / run には、名前の横に印が付く。
 
 ### run 一覧
@@ -69,6 +73,7 @@ experiment 内の run と group の表。「ドキュメント」タブには ex
   既定では出さない。見たいものを列の一覧から足す
 - 列でソートでき、名前や値で絞り込める
 - group は折りたたみ行になり、配下の run の summary の mean ± std が表示される
+- group 行の状態欄には、配下の run 数と、そのうち実行中（`stale` は除く）の本数が出る（group 詳細の見出しの下も同じ）
 - チェックボックスで run を選び、次の操作ができる
   - **比較**（2 件以上。run と group を混ぜてもよい）
   - **移動** — 所属 group を変える。`blab mv` と同じ操作
