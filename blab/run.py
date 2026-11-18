@@ -159,7 +159,9 @@ class Run:
                     self._meta["heartbeat_at"] = isoformat(now())
                     self._write_meta()
                 except Exception:  # noqa: BLE001 - 記録は学習を落とさない
-                    return
+                    # 一時的な書き込みの失敗（NFS の瞬断など）で止めると、生きている run が
+                    # 以後ずっと stale に見える。次の拍で書き直す。
+                    continue
 
         self._heartbeat = threading.Thread(target=beat, daemon=True, name="blab-heartbeat")
         self._heartbeat.start()
