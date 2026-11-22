@@ -1868,6 +1868,44 @@ td.empty > div {
 .imgview-actual {
   font-family: var(--mono);
 }
+.imgview-counter {
+  padding: 0 6px 0 8px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* 前後の画像へ送るボタン（画像が 2 枚以上のときだけ出る） */
+.imgview-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 64px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: rgb(20 26 34 / 70%);
+  color: #e6ebf1;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 30%);
+}
+.imgview-nav:hover:not(:disabled) {
+  background: rgb(20 26 34 / 92%);
+  color: #fff;
+}
+.imgview-nav:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.imgview-prev {
+  left: 16px;
+}
+.imgview-next {
+  right: 16px;
+}
 
 .run-chips {
   display: flex;
@@ -3597,6 +3635,16 @@ table.compare-table td.best { background: var(--best); }
   }
   .imgview-caption {
     display: none;
+  }
+  .imgview-nav {
+    width: 36px;
+    height: 52px;
+  }
+  .imgview-prev {
+    left: 8px;
+  }
+  .imgview-next {
+    right: 8px;
   }
 
   /* --- 構成タブ: 詳細を上に出すので sticky を外す（木を覆ってしまう） ----- */

@@ -183,6 +183,13 @@ const text = (node) => node.textContent;
   let prevented = false;
   link.listeners.click[0]({ ctrlKey: true, button: 0, preventDefault() { prevented = true; } });
   assert.equal(prevented, false, 'Ctrl+クリックはブラウザに任せる');
+
+  // 前後の画像への送りは端で止まる。
+  const { stepIndex } = await import('../../blab/static/js/imageview.js');
+  assert.equal(stepIndex(0, -1, 3), 0);
+  assert.equal(stepIndex(1, 1, 3), 2);
+  assert.equal(stepIndex(2, 1, 3), 2);
+  assert.equal(stepIndex(0, 1, 1), 0);
   console.log('image viewer: ok');
 }
 

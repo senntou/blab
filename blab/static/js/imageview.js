@@ -5,6 +5,7 @@
 // - 移動は画面の端で止めない。画像を画面の外まで追い出せる
 // - 指を離したら止まる（慣性は付けない）
 // - 「全体表示」で画像全体が収まる倍率にして中央に戻す（ダブルクリック / 0 キーでも）
+// - 複数の画像を渡すと、左右のボタンと ← / → キーで前後の画像に切り替えられる（端で止まる）
 
 import { icon } from './icons.js';
 import { el } from './util.js';
@@ -59,24 +60,40 @@ function fmtScale(s) {
 
 let current = null;
 
+/** 前後の画像の位置。端では動かない。 */
+export function stepIndex(index, delta, count) {
+  return Math.min(Math.max(index + delta, 0), Math.max(count - 1, 0));
+}
+
 /**
  * 画像ビューアを開く。開いているものがあれば閉じて差し替える。
  * @param {string} url
  * @param {string} [caption]
+ * @param {object} [opts]
+ * @param {{url: string, caption?: string}[]} [opts.gallery]  前後に送れる画像の並び（url はその中の 1 つ）
+ * @param {number} [opts.index]  gallery の中で最初に見せる位置
  * @returns {{close: Function}}
  */
-export function openImageView(url, caption = '') {
+export function openImageView(url, caption = '', { gallery = null, index = 0 } = {}) {
   if (current) current.close();
+
+  const items = gallery && gallery.length ? gallery : [{ url, caption }];
+  let pos = stepIndex(index, 0, items.length);
+  if (items[pos].url !== url) {
+    const found = items.findIndex((it) => it.url === url);
+    pos = found >= 0 ? found : 0;
+  }
+  const many = items.length > 1;
 
   let view = { scale: 1, x: 0, y: 0 };
   let natural = null; // {w, h}。読み込めるまでは null
   const pointers = new Map(); // pointerId -> {x, y}
   let gesture = null; // 押してからの動き（クリックとドラッグの区別、ピンチの基準）
 
-  const img = el('img', { class: 'imgview-img', src: url, alt: caption, draggable: 'false' });
+  let img = null;
   const status = el('span', { class: 'imgview-status' });
   const zoomLabel = el('span', { class: 'imgview-zoom', title: '原寸に対する倍率' });
-  const stage = el('div', { class: 'imgview-stage' }, [img, status]);
+  const stage = el('div', { class: 'imgview-stage' }, [status]);
 
   const apply = () => {
     img.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
@@ -105,17 +122,54 @@ export function openImageView(url, caption = '') {
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
 
-  img.addEventListener('load', () => {
-    natural = { w: img.naturalWidth, h: img.naturalHeight };
-    status.textContent = '';
-    stage.classList.add('ready');
-    // 開いたときは、小さな画像を引き伸ばさない。
-    fit({ upscale: false });
-  });
-  img.addEventListener('error', () => {
-    status.textContent = '画像を読み込めません';
-  });
-  status.textContent = '読み込み中…';
+  const captionLabel = el('span', { class: 'imgview-caption' });
+  const counter = el('span', { class: 'imgview-counter', title: '何枚目か (← / →)' });
+  const openLink = el('a', { class: 'icon-btn', target: '_blank', rel: 'noopener', title: '別タブで開く', 'aria-label': '別タブで開く' }, [icon('external', { size: 16 })]);
+  const sideButton = (dir, name, title, delta) =>
+    el('button', { class: `imgview-nav imgview-${dir}`, title, 'aria-label': title, onclick: () => go(delta) }, [icon(name, { size: 28 })]);
+  const prevBtn = many ? sideButton('prev', 'chevron-left', '前の画像 (←)', -1) : null;
+  const nextBtn = many ? sideButton('next', 'chevron-right', '次の画像 (→)', 1) : null;
+
+  // pos の画像を表示する。<img> は画像ごとに作り直す（同じ URL でも load を確実に受けるため）。
+  function show() {
+    const item = items[pos];
+    const cap = item.caption || '';
+    const next = el('img', { class: 'imgview-img', src: item.url, alt: cap, draggable: 'false' });
+    next.addEventListener('load', () => {
+      if (next !== img) return;
+      natural = { w: next.naturalWidth, h: next.naturalHeight };
+      status.textContent = '';
+      stage.classList.add('ready');
+      // 開いたときは、小さな画像を引き伸ばさない。
+      fit({ upscale: false });
+    });
+    next.addEventListener('error', () => {
+      if (next === img) status.textContent = '画像を読み込めません';
+    });
+    if (img) img.replaceWith(next);
+    else stage.prepend(next);
+    img = next;
+    natural = null;
+    stage.classList.remove('ready');
+    status.textContent = '読み込み中…';
+    captionLabel.textContent = cap;
+    captionLabel.title = cap;
+    captionLabel.hidden = !cap;
+    openLink.href = item.url;
+    if (many) {
+      counter.textContent = `${pos + 1} / ${items.length}`;
+      prevBtn.disabled = pos === 0;
+      nextBtn.disabled = pos === items.length - 1;
+    }
+    box.setAttribute('aria-label', cap || '画像');
+    apply();
+  }
+  function go(delta) {
+    const to = stepIndex(pos, delta, items.length);
+    if (to === pos) return;
+    pos = to;
+    show();
+  }
 
   stage.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -200,6 +254,8 @@ export function openImageView(url, caption = '') {
     else if (e.key === '1') actual();
     else if (e.key === '+' || e.key === '=') zoomCenter(1.25);
     else if (e.key === '-') zoomCenter(0.8);
+    else if (many && e.key === 'ArrowLeft') go(-1);
+    else if (many && e.key === 'ArrowRight') go(1);
     else return;
     e.preventDefault();
   };
@@ -208,17 +264,19 @@ export function openImageView(url, caption = '') {
     el('button', { class: 'icon-btn', title, 'aria-label': title, onclick }, [icon(name, { size: 16 }), text]);
 
   const bar = el('div', { class: 'imgview-bar' }, [
-    caption ? el('span', { class: 'imgview-caption', text: caption, title: caption }) : null,
+    many ? counter : null,
+    captionLabel,
     toolButton('zoom-out', '縮小 (-)', () => zoomCenter(0.8)),
     zoomLabel,
     toolButton('zoom-in', '拡大 (+)', () => zoomCenter(1.25)),
     el('button', { class: 'icon-btn imgview-actual', title: '原寸 (1)', onclick: actual, text: '1:1' }),
     toolButton('zoom', '全体表示 (0 / ダブルクリック)', () => fit(), '全体'),
-    el('a', { class: 'icon-btn', href: url, target: '_blank', rel: 'noopener', title: '別タブで開く', 'aria-label': '別タブで開く' }, [icon('external', { size: 16 })]),
+    openLink,
     toolButton('x', '閉じる (Esc)', () => close()),
   ]);
 
-  const box = el('div', { class: 'imgview', role: 'dialog', 'aria-label': caption || '画像' }, [stage, bar]);
+  // 左右のボタンは stage の外に置く（stage のドラッグ・外側クリックで閉じる処理に巻き込まない）。
+  const box = el('div', { class: 'imgview', role: 'dialog' }, [stage, prevBtn, nextBtn, bar]);
 
   function close() {
     box.remove();
@@ -231,7 +289,7 @@ export function openImageView(url, caption = '') {
   document.addEventListener('keydown', onKey);
   window.addEventListener('resize', onResize);
   last = size();
-  apply();
+  show();
   current = { box, close };
   return { close };
 }

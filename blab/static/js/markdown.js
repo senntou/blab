@@ -184,6 +184,9 @@ function imageNode(m, ctx) {
   const target = resolveUrl(m[2], ctx, { image: true });
   if (!target.href) return document.createTextNode(m[0]);
   const img = el('img', { src: target.href, alt, title: m[3] || null, loading: 'lazy' });
+  // 文書中の画像を出てくる順に覚えておき、ビューアで ← / → で前後に送れるようにする。
+  const entry = { url: target.href, caption: alt || m[3] || '' };
+  ctx.images.push(entry);
   // 押したらその場で拡大して見る。Ctrl / ⌘ / Shift 付きや中クリックなら、従来どおり別タブで開ける。
   return el('a', {
     class: 'md-image',
@@ -193,7 +196,7 @@ function imageNode(m, ctx) {
     onclick: (e) => {
       if (e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
       e.preventDefault();
-      openImageView(target.href, alt || m[3] || '');
+      openImageView(entry.url, entry.caption, { gallery: ctx.images, index: ctx.images.indexOf(entry) });
     },
   }, [img]);
 }
@@ -509,7 +512,7 @@ function parseBlocks(lines, ctx, into) {
  */
 export function markdownBlock(text, { base = null, onDocLink = null, defaultLanguage = 'python' } = {}) {
   const wrap = el('div', { class: 'md' });
-  const ctx = { base, onDocLink, defaultLanguage, copyCode: true, math: [], root: wrap };
+  const ctx = { base, onDocLink, defaultLanguage, copyCode: true, math: [], images: [], root: wrap };
   let source = String(text ?? '').replace(/\r\n?/g, '\n').replace(/\t/g, '    ');
 
   // 先頭の YAML front matter は本文ではないので、畳んだ表にせず素のコードで見せる。
