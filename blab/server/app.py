@@ -10,6 +10,7 @@ UI がディレクトリを直接触るのではなく実行層の同じ操作�
 from __future__ import annotations
 
 import hashlib
+import heapq
 import threading
 import time
 from pathlib import Path
@@ -33,6 +34,9 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 #: 索引の再走査を抑制する間隔（UI のポーリングは 3 秒間隔）。
 RESCAN_INTERVAL_SEC = 1.0
+
+#: Experiments に出す「最近の run」の件数。
+RECENT_RUNS = 50
 
 #: ソースとしてそのまま表示してよい拡張子。
 TEXT_SUFFIXES = {".py", ".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini"}
@@ -183,13 +187,18 @@ def create_app(project: Project | None = None, runs_dir: Path | None = None) -> 
         「実行中」は heartbeat が生きているものだけ。`running` のまま heartbeat が途絶えたもの
         （`stale`。SIGKILL・OOM・segfault・コンテナごと落ちた等で終了を書けなかった run）は、
         実際にはほぼ死んでいるので数えない。
+
+        `recent` は作られた順に新しい `RECENT_RUNS` 本。どれも走査済みの meta から作るので、
+        ファイルを追加で読まない（run が数千本あっても、NAS への読み込みは増えない）。
         """
         out = []
         live = []
+        everything = []
         for node in view.nodes():
             runs = [r for r in node.leaf_runs() if not index_mod.is_trashed(view.runs_dir, r.path)]
             running = [r for r in runs if r.status == STATUS_RUNNING]
             live.extend(running)
+            everything.extend(runs)
             out.append(
                 {
                     "path": index_mod.relpath(view.runs_dir, node.path),
@@ -202,9 +211,16 @@ def create_app(project: Project | None = None, runs_dir: Path | None = None) -> 
                     ),
                 }
             )
-        rows = [index_mod.live_row(r, view.runs_dir) for r in live]
-        rows.sort(key=lambda r: r["created_at"] or "", reverse=True)
-        return {"experiments": out, "live": rows}
+        def created(r):
+            return r.meta.get("created_at") or ""
+
+        live.sort(key=created, reverse=True)
+        recent = heapq.nlargest(RECENT_RUNS, everything, key=created)
+        return {
+            "experiments": out,
+            "live": [index_mod.link_row(r, view.runs_dir) for r in live],
+            "recent": [index_mod.link_row(r, view.runs_dir) for r in recent],
+        }
 
     def node_rows(view: View, experiment: str | None, kind: str | None, include_trash: bool):
         rows = []

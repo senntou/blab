@@ -1,5 +1,6 @@
 // Experiment 一覧 — run 数 / 実行中の数 / 最終更新。数が増えても読めるよう行で並べる。
 // 上に実行中の run の一覧を出し、experiment をたどらずにそこへ飛べるようにする。
+// その下に最近の run（既定で畳む）を置き、終わったばかりの run にもすぐ飛べるようにする。
 
 import { api } from '../api.js';
 import { docsMark } from '../docs.js';
@@ -46,7 +47,7 @@ function elapsedSince(iso) {
   return Number.isNaN(ms) ? undefined : Math.max(0, (Date.now() - ms) / 1000);
 }
 
-function liveItem(r) {
+function whereLinks(r) {
   const where = [
     el('a', { href: `#/e/${encodeURIComponent(r.experiment)}`, text: r.experiment }),
   ];
@@ -56,12 +57,20 @@ function liveItem(r) {
       el('a', { href: `#/group/${r.experiment}/${r.group}`, text: r.group }),
     );
   }
+  return el('span', { class: 'live-where' }, where);
+}
+
+function runLink(r, status) {
+  return el('a', { class: 'live-name', href: `#/run/${r.path}`, title: r.path }, [
+    el('span', { class: `status status-${status}`, title: status }, [statusDot()]),
+    el('span', { text: r.name || r.path.split('/').pop() }),
+  ]);
+}
+
+function liveItem(r) {
   return el('li', { class: 'live-item' }, [
-    el('a', { class: 'live-name', href: `#/run/${r.path}`, title: r.path }, [
-      el('span', { class: 'status status-running' }, [statusDot()]),
-      el('span', { text: r.name || r.path.split('/').pop() }),
-    ]),
-    el('span', { class: 'live-where' }, where),
+    runLink(r, 'running'),
+    whereLinks(r),
     el('span', {
       class: 'live-time',
       title: `開始 ${fmtTime(r.created_at)}`,
@@ -83,17 +92,55 @@ function livePanel(live) {
   ]);
 }
 
+function recentItem(r) {
+  const finished = r.finished_at ? `\n終了 ${fmtTime(r.finished_at)}` : '';
+  return el('li', { class: 'live-item' }, [
+    runLink(r, r.status),
+    whereLinks(r),
+    el('span', {
+      class: 'live-time',
+      title: `開始 ${fmtTime(r.created_at)}${finished}`,
+      text: fmtRelative(r.created_at),
+    }),
+  ]);
+}
+
+/**
+ * 最近作られた run（サーバが新しい順に数十本返す）。場所を取らないよう既定では畳み、
+ * 開いたときも数行分の高さでスクロールさせる。開閉は覚えておく。
+ */
+function recentPanel(recent, scrollTop) {
+  if (!recent.length) return null;
+  const list = el('ul', { class: 'live-list recent-list' }, recent.map(recentItem));
+  const details = el('details', { class: 'panel recent-panel' }, [
+    el('summary', {}, [
+      icon('chevron-right', { size: 14, class: 'recent-chevron' }),
+      el('span', { text: '最近の run' }),
+      el('span', { class: 'muted recent-count', text: `新しい順に ${recent.length} 本` }),
+    ]),
+    list,
+  ]);
+  details.open = getPref('experiments.recentOpen', false);
+  details.addEventListener('toggle', () => setPref('experiments.recentOpen', details.open));
+  // 実行中はポーリングで描き直すので、一覧のスクロール位置を引き継ぐ。
+  if (scrollTop) requestAnimationFrame(() => { list.scrollTop = scrollTop; });
+  return details;
+}
+
 export async function experimentsView() {
   const node = el('div', { class: 'view' });
   let running = 0;
 
   async function load() {
-    const { experiments, live = [] } = await api.experiments();
+    const { experiments, live = [], recent = [] } = await api.experiments();
     running = experiments.reduce((n, e) => n + e.n_running, 0);
+    const scrollTop = node.querySelector('.recent-list')?.scrollTop || 0;
     clear(node);
     node.append(el('h1', { text: 'Experiments' }));
     const panel = livePanel(live);
     if (panel) node.append(panel);
+    const recentNode = recentPanel(recent, scrollTop);
+    if (recentNode) node.append(recentNode);
 
     if (!experiments.length) {
       node.append(

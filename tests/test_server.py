@@ -104,6 +104,23 @@ class TestLive:
         assert doc["experiments"][0]["n_running"] == 0
 
 
+class TestRecent:
+    def test_newest_first_without_trash(self, rich, project):
+        doc = rich.get("/api/experiments").json()
+        recent = doc["recent"]
+        assert len(recent) == 4
+        created = [r["created_at"] for r in recent]
+        assert created == sorted(created, reverse=True)
+        assert {r["status"] for r in recent} == {"finished"}
+        assert "summary" not in recent[0]
+
+    def test_capped(self, rich, monkeypatch):
+        from blab.server import app as app_mod
+
+        monkeypatch.setattr(app_mod, "RECENT_RUNS", 2)
+        assert len(rich.get("/api/experiments").json()["recent"]) == 2
+
+
 class TestNodes:
     def test_columns_come_from_resolved_yaml(self, client):
         row = next(r for r in client.get("/api/nodes").json()["rows"] if r["kind"] == "run")

@@ -469,8 +469,8 @@ def row(node: Node, root: Path) -> dict:
     return out
 
 
-def live_row(node: Node, root: Path) -> dict:
-    """実行中の run の 1 行分。一覧から飛ぶための軽い形（summary を読まない）。"""
+def link_row(node: Node, root: Path) -> dict:
+    """run へ飛ぶための 1 行分（実行中・最近の一覧）。軽い形で、summary は読まない。"""
     path = relpath(root, node.path)
     parts = path.split("/")
     return {
@@ -479,7 +479,9 @@ def live_row(node: Node, root: Path) -> dict:
         "group": "/".join(parts[1:-1]),
         "name": node.name,
         "id": node.id,
+        "status": node.status,
         "created_at": node.meta.get("created_at"),
+        "finished_at": node.meta.get("finished_at"),
     }
 
 

@@ -3418,6 +3418,20 @@ table.experiments-table .is-running { color: var(--running); font-weight: 600; }
 @media (max-width: 640px) {
   .live-item { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
+
+/* 最近の run（Experiments の上。既定で畳む） */
+.recent-panel { padding-top: 10px; padding-bottom: 10px; }
+.recent-panel > summary {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 14px; font-weight: 600;
+  cursor: pointer; list-style: none; user-select: none;
+}
+.recent-panel > summary::-webkit-details-marker { display: none; }
+.recent-panel .recent-chevron { color: var(--muted); transition: transform .15s; }
+.recent-panel[open] .recent-chevron { transform: rotate(90deg); }
+.recent-panel .recent-count { font-size: 12px; font-weight: 400; }
+/* 開いても 10 行ほどの高さに収め、残りはスクロール */
+.recent-list { max-height: 330px; overflow-y: auto; margin-top: 8px; }
 .group-status { display: inline-flex; align-items: center; gap: 10px; }
 .group-summary { margin: 0 0 12px; }
 table.nodes tbody tr.row-link { cursor: pointer; }
